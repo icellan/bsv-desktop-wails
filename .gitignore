@@ -1,0 +1,7 @@
+build/bin
+build/icons.iconset
+node_modules
+frontend/dist
+.idea/
+bsv-desktop-wails
+*.exe

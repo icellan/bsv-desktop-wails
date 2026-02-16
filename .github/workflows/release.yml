@@ -1,0 +1,276 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: 'lts/*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+      - name: Verify certificate
+        id: verify_cert
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID")
+          echo "CERT_INFO=$CERT_INFO"
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "cert_id=$CERT_ID" >> $GITHUB_OUTPUT
+
+      - name: Build frontend
+        run: make frontend
+
+      - name: Build macOS .app bundle
+        run: make build-mac
+
+      - name: Code sign .app bundle
+        env:
+          SIGNING_IDENTITY: ${{ steps.verify_cert.outputs.cert_id }}
+        run: |
+          codesign --deep --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            "build/bin/BSV-Desktop.app"
+          codesign --verify --verbose "build/bin/BSV-Desktop.app"
+
+      - name: Notarize .app bundle
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Create a zip for notarization
+          ditto -c -k --keepParent "build/bin/BSV-Desktop.app" "build/bin/BSV-Desktop-notarize.zip"
+          xcrun notarytool submit "build/bin/BSV-Desktop-notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASS" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "build/bin/BSV-Desktop.app"
+          rm "build/bin/BSV-Desktop-notarize.zip"
+
+      - name: Create DMG
+        run: make package-mac
+
+      - name: Code sign DMG
+        env:
+          SIGNING_IDENTITY: ${{ steps.verify_cert.outputs.cert_id }}
+        run: |
+          DMG=$(ls build/bin/*.dmg)
+          codesign --force --sign "$SIGNING_IDENTITY" "$DMG"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: build/bin/*.dmg
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Build frontend
+        run: make frontend
+
+      - name: Build Linux binary
+        run: make build-linux
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --import
+
+      - name: Sign binary with GPG
+        run: |
+          gpg --detach-sign --armor "build/bin/BSV-Desktop"
+
+      - name: Create SHA256SUMS
+        run: |
+          cd build/bin
+          sha256sum BSV-Desktop > SHA256SUMS
+          gpg --detach-sign --armor SHA256SUMS
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            build/bin/BSV-Desktop
+            build/bin/BSV-Desktop.asc
+            build/bin/SHA256SUMS
+            build/bin/SHA256SUMS.asc
+
+  build-windows:
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build frontend
+        run: make frontend
+        shell: bash
+
+      - name: Build Windows binary
+        shell: bash
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
+          CLEAN_VERSION=$(echo $VERSION | sed 's/^v//')
+          CGO_ENABLED=1 go build -tags desktop,production \
+            -ldflags "-X main.version=$CLEAN_VERSION -H windowsgui" \
+            -o build/bin/BSV-Desktop.exe .
+
+      - name: Set up DigiCert certificate
+        run: |
+          echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
+        shell: bash
+
+      - name: Set DigiCert environment variables
+        shell: bash
+        run: |
+          echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}" >> "$GITHUB_ENV"
+          echo "SM_FINGERPRINT=${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
+
+      - name: Code signing with Software Trust Manager
+        uses: digicert/ssm-code-signing@v1.1.0
+        env:
+          FORCE_DOWNLOAD_TOOLS: 'true'
+
+      - name: DigiCert tools healthcheck
+        shell: cmd
+        run: |
+          smctl version
+          smctl healthcheck
+
+      - name: Sync KeyLocker certificate
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
+
+      - name: Sign Windows executable
+        shell: cmd
+        run: |
+          smctl sign --fingerprint %SM_FINGERPRINT% --input "build\bin\BSV-Desktop.exe"
+
+      - name: Verify Windows signature
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+          & $signtool verify /pa "build\bin\BSV-Desktop.exe"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: build/bin/BSV-Desktop.exe
+
+  create-release:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Delete existing draft releases for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release list --limit 100 | grep "Draft" | grep "$TAG" | awk '{print $1}' | xargs -I {} gh release delete {} --yes || true
+        continue-on-error: true
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          gh release create "$TAG" \
+            --draft \
+            --title "BSV Desktop v${VERSION}" \
+            --notes "Release v${VERSION}"
+
+          for dir in artifacts/*/; do
+            for file in "$dir"*; do
+              if [ -f "$file" ]; then
+                gh release upload "$TAG" "$file" --clobber
+              fi
+            done
+          done

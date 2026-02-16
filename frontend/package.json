@@ -1,0 +1,45 @@
+{
+  "name": "bsv-desktop-wails-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@bsv/amountinator": "^0.2.12",
+    "@bsv/identity-react": "^1.1.9",
+    "@bsv/message-box-client": "^1.4.0",
+    "@bsv/sdk": "^1.10.3",
+    "@bsv/uhrp-react": "^1.0.4",
+    "@bsv/wallet-toolbox": "^1.8.2",
+    "@bsv/wallet-toolbox-client": "^1.8.2",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.8",
+    "@mui/material": "^6.4.8",
+    "@mui/styles": "^6.4.8",
+    "date-fns": "^4.1.0",
+    "fuse.js": "^7.1.0",
+    "iso-3166-ts": "^2.2.0",
+    "jdenticon": "^3.3.0",
+    "libphonenumber-js": "^1.12.23",
+    "metanet-apps": "^1.0.6",
+    "qrcode.react": "^4.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^5.2.0",
+    "react-toastify": "^11.0.5",
+    "use-async-effect": "^2.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@types/react-router-dom": "^5.3.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.6.2",
+    "vite": "^6.3.6"
+  }
+}
