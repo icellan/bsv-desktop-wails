@@ -7,10 +7,14 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	app := NewApp()
@@ -29,6 +33,13 @@ func main() {
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		OnDomReady:       app.domReady,
+		Mac: &mac.Options{
+			About: &mac.AboutInfo{
+				Title:   "BSV Desktop",
+				Message: "BSV Blockchain Desktop Wallet\nVersion " + version,
+				Icon:    appIcon,
+			},
+		},
 		Bind: []interface{}{
 			app,
 			walletService,

@@ -15,18 +15,31 @@ import (
 	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/wdk"
 )
 
+// parseAuthFromArgs extracts an AuthID from the first argument (passed by the TS WalletStorageManager)
+// and returns the remaining args. If the first arg is not a valid auth object, returns a zero AuthID
+// and the original args unchanged.
+func parseAuthFromArgs(args []json.RawMessage) (wdk.AuthID, []json.RawMessage) {
+	if len(args) < 1 {
+		return wdk.AuthID{}, args
+	}
+	var auth wdk.AuthID
+	if err := json.Unmarshal(args[0], &auth); err != nil || auth.IdentityKey == "" {
+		return wdk.AuthID{}, args
+	}
+	return auth, args[1:]
+}
+
 // StorageProxyService provides Wails-bound methods that mirror the Electron IPC storage interface.
 // The frontend's StorageWailsProxy calls these methods instead of StorageElectronIPC.
 //
 // Architecture:
-// - storage.Provider implements wdk.WalletStorageProvider (methods WITH auth AuthID param)
-// - storage.WalletStorageManager wraps Provider and implements wdk.WalletStorage (auth-free methods)
-// - The TypeScript WalletStorageManager calls high-level methods (createAction, listActions, etc.)
-// - Low-level CRUD methods (insertCertificate, findOutputs, etc.) are NOT called by WalletStorageManager
+// - The TypeScript WalletStorageManager is the sole coordinator of active/backup stores and auth.
+// - This Go service is a dumb storage provider: it routes calls to storage.Provider (GORM/SQLite).
+// - Auth is passed from the TS WSM as the first argument to methods that need it.
+// - There is NO Go-side WalletStorageManager — all store management happens in TypeScript.
 type StorageProxyService struct {
 	mu       sync.RWMutex
 	storages map[string]*storage.Provider
-	managers map[string]*storage.WalletStorageManager
 	services map[string]*services.WalletServices
 	logger   *slog.Logger
 }
@@ -38,7 +51,6 @@ func NewStorageProxyService() *StorageProxyService {
 	}))
 	return &StorageProxyService{
 		storages: make(map[string]*storage.Provider),
-		managers: make(map[string]*storage.WalletStorageManager),
 		services: make(map[string]*services.WalletServices),
 		logger:   logger,
 	}
@@ -117,8 +129,10 @@ func (s *StorageProxyService) IsAvailable(identityKey string, chain string) (boo
 	return true, nil
 }
 
-// MakeAvailable initializes the database, runs migrations, and creates the WalletStorageManager
+// MakeAvailable initializes the database, runs migrations, and returns TableSettings.
 func (s *StorageProxyService) MakeAvailable(identityKey string, chain string) (string, error) {
+	s.logger.Info("MakeAvailable called", "identityKey", identityKey[:16]+"...", "chain", chain)
+
 	provider, err := s.getOrCreateStorage(identityKey, chain)
 	if err != nil {
 		return "", err
@@ -126,24 +140,23 @@ func (s *StorageProxyService) MakeAvailable(identityKey string, chain string) (s
 
 	ctx := context.Background()
 
-	settings, err := provider.Migrate(ctx, "BSV Desktop Wallet", identityKey)
-	if err != nil {
+	// Run migrations first
+	if _, err := provider.Migrate(ctx, "BSV Desktop Wallet", identityKey); err != nil {
 		return "", fmt.Errorf("migration failed: %w", err)
 	}
 
-	// Create WalletStorageManager wrapping the provider
-	key := s.storageKey(identityKey, chain)
-	wsm := storage.NewWalletStorageManager(identityKey, s.logger, provider)
-
-	s.mu.Lock()
-	s.managers[key] = wsm
-	s.mu.Unlock()
+	// Return the actual TableSettings (with storageIdentityKey, storageName, chain, etc.)
+	settings, err := provider.MakeAvailable(ctx)
+	if err != nil {
+		return "", fmt.Errorf("MakeAvailable failed: %w", err)
+	}
 
 	result, err := json.Marshal(settings)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
+	s.logger.Info("MakeAvailable result", "settings", string(result))
 	return string(result), nil
 }
 
@@ -157,12 +170,12 @@ func (s *StorageProxyService) InitializeServices(identityKey string, chain strin
 	return nil
 }
 
-// CallMethod proxies a storage method call with JSON-serialized args
+// CallMethod proxies a storage method call with JSON-serialized args.
+// The TS WalletStorageManager passes auth as the first arg for methods that need it.
 func (s *StorageProxyService) CallMethod(identityKey string, chain string, method string, argsJSON string) (string, error) {
 	key := s.storageKey(identityKey, chain)
 
 	s.mu.RLock()
-	wsm := s.managers[key]
 	provider := s.storages[key]
 	s.mu.RUnlock()
 
@@ -178,16 +191,26 @@ func (s *StorageProxyService) CallMethod(identityKey string, chain string, metho
 		}
 	}
 
+	s.logger.Info("CallMethod", "method", method, "key", key, "numArgs", len(args))
+
 	ctx := context.Background()
 
-	result, err := callStorageMethod(ctx, wsm, provider, method, args)
+	result, err := callStorageMethod(ctx, provider, method, args)
 	if err != nil {
+		s.logger.Error("CallMethod failed", "method", method, "error", err)
 		return "", err
 	}
 
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	// Log full result for key methods to debug active storage issues
+	if method == "findOrInsertUser" || method == "makeAvailable" || method == "setActive" {
+		s.logger.Info("CallMethod result", "method", method, "result", string(resultJSON))
+	} else {
+		s.logger.Info("CallMethod result", "method", method, "resultLen", len(resultJSON))
 	}
 
 	return string(resultJSON), nil
@@ -202,17 +225,16 @@ func (s *StorageProxyService) Cleanup() {
 		s.logger.Info("Cleaning up storage", "key", key)
 		delete(s.storages, key)
 	}
-	s.managers = make(map[string]*storage.WalletStorageManager)
 	s.services = make(map[string]*services.WalletServices)
 }
 
-// callStorageMethod dispatches a method call to the WalletStorageManager or Provider.
-// The WalletStorageManager handles auth internally for most methods.
-// Sync methods go directly to the Provider since they're excluded from WSM.
-func callStorageMethod(ctx context.Context, wsm *storage.WalletStorageManager, provider *storage.Provider, method string, args []json.RawMessage) (any, error) {
+// callStorageMethod dispatches a method call to the storage.Provider.
+// The TS WalletStorageManager passes auth as the first arg for methods that need it.
+// Auth-free methods (makeAvailable, findOrInsertUser, migrate) are called directly.
+func callStorageMethod(ctx context.Context, provider *storage.Provider, method string, args []json.RawMessage) (any, error) {
 	switch method {
 
-	// === Storage management ===
+	// === Storage management (no auth) ===
 
 	case "migrate":
 		var storageName, storageIdentityKey string
@@ -222,15 +244,9 @@ func callStorageMethod(ctx context.Context, wsm *storage.WalletStorageManager, p
 		if len(args) >= 2 {
 			json.Unmarshal(args[1], &storageIdentityKey)
 		}
-		if wsm != nil {
-			return wsm.Migrate(ctx, storageName, storageIdentityKey)
-		}
 		return provider.Migrate(ctx, storageName, storageIdentityKey)
 
 	case "makeAvailable":
-		if wsm != nil {
-			return wsm.MakeAvailable(ctx)
-		}
 		return provider.MakeAvailable(ctx)
 
 	case "findOrInsertUser":
@@ -241,261 +257,175 @@ func callStorageMethod(ctx context.Context, wsm *storage.WalletStorageManager, p
 		if err := json.Unmarshal(args[0], &identityKey); err != nil {
 			return nil, fmt.Errorf("failed to parse findOrInsertUser args: %w", err)
 		}
-		if wsm != nil {
-			return wsm.FindOrInsertUser(ctx, identityKey)
-		}
 		return provider.FindOrInsertUser(ctx, identityKey)
 
 	case "setActive":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("setActive requires 1 arg")
+		// TS WSM calls: setActive(auth, storageIdentityKey)
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("setActive requires storageIdentityKey arg")
 		}
 		var storageIdentityKey string
-		if err := json.Unmarshal(args[0], &storageIdentityKey); err != nil {
-			return nil, fmt.Errorf("failed to parse setActive args: %w", err)
-		}
-		if wsm != nil {
-			return nil, wsm.SetActive(ctx, storageIdentityKey)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
+		if err := json.Unmarshal(rest[0], &storageIdentityKey); err != nil {
+			return nil, fmt.Errorf("failed to parse setActive storageIdentityKey: %w", err)
 		}
 		return nil, provider.SetActive(ctx, auth, storageIdentityKey)
 
 	case "destroy":
 		return nil, nil
 
-	// === Action operations ===
+	// === Action operations (auth as first arg from TS WSM) ===
 
 	case "createAction":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("createAction requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("createAction requires args")
 		}
 		var a wdk.ValidCreateActionArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse createAction args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.CreateAction(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.CreateAction(ctx, auth, a)
 
 	case "processAction":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("processAction requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("processAction requires args")
 		}
 		var a wdk.ProcessActionArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse processAction args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.ProcessAction(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.ProcessAction(ctx, auth, a)
 
 	case "abortAction":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("abortAction requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("abortAction requires args")
 		}
 		var a wdk.AbortActionArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse abortAction args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.AbortAction(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.AbortAction(ctx, auth, a)
 
 	case "internalizeAction":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("internalizeAction requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("internalizeAction requires args")
 		}
 		var a wdk.InternalizeActionArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse internalizeAction args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.InternalizeAction(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.InternalizeAction(ctx, auth, a)
 
-	// === List/query operations ===
+	// === List/query operations (auth as first arg from TS WSM) ===
 
 	case "listActions":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("listActions requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("listActions requires args")
 		}
 		var a wdk.ListActionsArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse listActions args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.ListActions(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.ListActions(ctx, auth, a)
 
 	case "listCertificates":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("listCertificates requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("listCertificates requires args")
 		}
 		var a wdk.ListCertificatesArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse listCertificates args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.ListCertificates(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.ListCertificates(ctx, auth, a)
 
 	case "listOutputs":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("listOutputs requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("listOutputs requires args")
 		}
 		var a wdk.ListOutputsArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse listOutputs args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.ListOutputs(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.ListOutputs(ctx, auth, a)
 
 	case "listTransactions":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("listTransactions requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("listTransactions requires args")
 		}
 		var a wdk.ListTransactionsArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse listTransactions args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.ListTransactions(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.ListTransactions(ctx, auth, a)
 
-	// === Certificate operations ===
+	// === Certificate operations (auth as first arg from TS WSM) ===
 
 	case "insertCertificateAuth":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("insertCertificateAuth requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("insertCertificateAuth requires args")
 		}
 		var cert wdk.TableCertificateX
-		if err := json.Unmarshal(args[0], &cert); err != nil {
+		if err := json.Unmarshal(rest[0], &cert); err != nil {
 			return nil, fmt.Errorf("failed to parse insertCertificateAuth args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.InsertCertificateAuth(ctx, &cert)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.InsertCertificateAuth(ctx, auth, &cert)
 
 	case "relinquishCertificate":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("relinquishCertificate requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("relinquishCertificate requires args")
 		}
 		var a wdk.RelinquishCertificateArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse relinquishCertificate args: %w", err)
-		}
-		if wsm != nil {
-			return nil, wsm.RelinquishCertificate(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return nil, provider.RelinquishCertificate(ctx, auth, a)
 
 	case "relinquishOutput":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("relinquishOutput requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("relinquishOutput requires args")
 		}
 		var a wdk.RelinquishOutputArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse relinquishOutput args: %w", err)
-		}
-		if wsm != nil {
-			return nil, wsm.RelinquishOutput(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return nil, provider.RelinquishOutput(ctx, auth, a)
 
-	// === Output/basket queries ===
+	// === Output/basket queries (auth as first arg from TS WSM) ===
 
 	case "findOutputBasketsAuth":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("findOutputBasketsAuth requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("findOutputBasketsAuth requires args")
 		}
 		var a wdk.FindOutputBasketsArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse findOutputBasketsAuth args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.FindOutputBasketsAuth(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.FindOutputBasketsAuth(ctx, auth, a)
 
 	case "findOutputsAuth":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("findOutputsAuth requires 1 arg")
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("findOutputsAuth requires args")
 		}
 		var a wdk.FindOutputsArgs
-		if err := json.Unmarshal(args[0], &a); err != nil {
+		if err := json.Unmarshal(rest[0], &a); err != nil {
 			return nil, fmt.Errorf("failed to parse findOutputsAuth args: %w", err)
-		}
-		if wsm != nil {
-			return wsm.FindOutputsAuth(ctx, a)
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
 		}
 		return provider.FindOutputsAuth(ctx, auth, a)
 
-	// === Sync operations (not on WalletStorageManager, use Provider directly) ===
+	// === Sync operations ===
 
 	case "getSyncChunk":
 		if len(args) < 1 {
@@ -508,16 +438,14 @@ func callStorageMethod(ctx context.Context, wsm *storage.WalletStorageManager, p
 		return provider.GetSyncChunk(ctx, a)
 
 	case "findOrInsertSyncStateAuth":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("findOrInsertSyncStateAuth requires 2 args")
-		}
-		auth, err := getProviderAuth(ctx, provider)
-		if err != nil {
-			return nil, err
+		// TS WSM calls: findOrInsertSyncStateAuth(auth, storageIdentityKey, storageName)
+		auth, rest := parseAuthFromArgs(args)
+		if len(rest) < 2 {
+			return nil, fmt.Errorf("findOrInsertSyncStateAuth requires storageIdentityKey and storageName args")
 		}
 		var storageIdentityKey, storageName string
-		json.Unmarshal(args[0], &storageIdentityKey)
-		json.Unmarshal(args[1], &storageName)
+		json.Unmarshal(rest[0], &storageIdentityKey)
+		json.Unmarshal(rest[1], &storageName)
 		return provider.FindOrInsertSyncStateAuth(ctx, auth, storageIdentityKey, storageName)
 
 	case "processSyncChunk":
@@ -534,21 +462,7 @@ func callStorageMethod(ctx context.Context, wsm *storage.WalletStorageManager, p
 		}
 		return provider.ProcessSyncChunk(ctx, reqArgs, &chunk)
 
-	// === Low-level CRUD stubs ===
-	// These methods exist on the TypeScript WalletStorageProvider interface but are internal
-	// to StorageKnex and NOT called by the TypeScript WalletStorageManager.
-	// If any of these are actually needed at runtime, they will produce an error
-	// that can be diagnosed and the specific method implemented.
 	default:
-		return nil, fmt.Errorf("storage method %q not implemented in Go proxy (may be a low-level CRUD method not used by WalletStorageManager)", method)
+		return nil, fmt.Errorf("storage method %q not implemented in Go proxy", method)
 	}
-}
-
-// getProviderAuth resolves the AuthID by looking up the user in the storage provider.
-// This is used as a fallback when the WalletStorageManager is not available.
-func getProviderAuth(ctx context.Context, provider *storage.Provider) (wdk.AuthID, error) {
-	// The WalletStorageManager normally handles auth resolution.
-	// When using the provider directly, we need to get auth another way.
-	// Return an empty auth - the provider should handle this based on its internal state.
-	return wdk.AuthID{}, fmt.Errorf("direct provider auth not available - ensure WalletStorageManager is initialized")
 }
