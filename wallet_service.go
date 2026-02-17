@@ -47,7 +47,8 @@ func (ws *WalletService) InitializeWallet(privateKeyHex string, chain string) er
 	defer ws.mu.Unlock()
 
 	if ws.wallet != nil {
-		return fmt.Errorf("wallet already initialized")
+		ws.logger.Info("Wallet already initialized, skipping")
+		return nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -178,6 +179,40 @@ func (ws *WalletService) GetNetwork() string {
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 	return string(ws.chain)
+}
+
+// GetSettings returns the user settings JSON from disk
+func (ws *WalletService) GetSettings() (string, error) {
+	settingsPath, err := ws.settingsPath()
+	if err != nil {
+		return "{}", nil
+	}
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return "{}", nil // No settings file yet, return empty object
+	}
+	return string(data), nil
+}
+
+// SetSettings saves the user settings JSON to disk
+func (ws *WalletService) SetSettings(settingsJSON string) error {
+	settingsPath, err := ws.settingsPath()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(settingsPath, []byte(settingsJSON), 0o644)
+}
+
+func (ws *WalletService) settingsPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	bsvDir := filepath.Join(homeDir, ".bsv-desktop")
+	if err := os.MkdirAll(bsvDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create data directory: %w", err)
+	}
+	return filepath.Join(bsvDir, "settings.json"), nil
 }
 
 // --- BRC-100 Wallet Interface Methods ---

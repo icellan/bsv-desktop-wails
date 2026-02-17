@@ -5,8 +5,12 @@ export function CallWalletMethod(arg1:string,arg2:string,arg3:string):Promise<st
 
 export function GetNetwork():Promise<string>;
 
+export function GetSettings():Promise<string>;
+
 export function InitializeWallet(arg1:string,arg2:string):Promise<void>;
 
 export function IsWalletReady():Promise<boolean>;
+
+export function SetSettings(arg1:string):Promise<void>;
 
 export function ShutdownWallet():Promise<void>;

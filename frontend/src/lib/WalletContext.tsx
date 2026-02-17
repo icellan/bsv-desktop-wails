@@ -646,12 +646,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   }, [deferRequest, groupPhase, isFocused, isPactCooldownActive, normalizeOriginator, onFocusRequested, setCounterpartyPermissionModalOpen])
 
   const updateSettings = useCallback(async (newSettings: WalletSettings) => {
-    if (!managers.settingsManager) {
-      throw new Error('The user must be logged in to update settings!')
-    }
-    await managers.settingsManager.set(newSettings);
+    const { SetSettings } = await import('../../wailsjs/go/main/WalletService');
+    await SetSettings(JSON.stringify(newSettings));
     setSettings(newSettings);
-  }, [managers.settingsManager]);
+  }, []);
 
   // ---- Callbacks for password/recovery/etc.
   const [passwordRetriever, setPasswordRetriever] = useState<
@@ -1189,93 +1187,25 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     try {
       const newManagers = {} as any;
       const chain = selectedNetwork;
-      const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey));
-      console.log('[buildWallet] Created KeyDeriver with identityKey:', keyDeriver.identityKey);
 
-      // First, create and initialize the primary/active storage provider
-      let activeStorage: any;
-      const services = new Services(chain);
+      // Convert primaryKey (number[]) to hex string for Go
+      const privateKeyHex = Array.from(primaryKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      console.log('[buildWallet] Initializing Go wallet...');
 
-      if (useRemoteStorage) {
-        console.log('[buildWallet] Preparing REMOTE storage as active:', selectedStorageUrl);
-        // We'll create this after the wallet
-        activeStorage = null; // Will be created below
-      } else {
-        console.log('[buildWallet] Preparing LOCAL Wails storage as active');
-        // Create and initialize local storage first
-        const wailsStorage = new StorageWailsProxy(keyDeriver.identityKey, chain);
-        wailsStorage.setServices(services as any);
-        console.log('[buildWallet] Initializing backend services...');
-        await wailsStorage.initializeBackendServices();
-        console.log('[buildWallet] Making local storage available...');
-        await wailsStorage.makeAvailable();
-        activeStorage = wailsStorage;
-      }
+      // Initialize the Go wallet - this is THE single wallet for both UI and HTTP
+      const { InitializeWallet } = await import('../../wailsjs/go/main/WalletService');
+      await InitializeWallet(privateKeyHex, chain);
+      console.log('[buildWallet] Go wallet initialized');
 
-      // Create backup storage providers array
-      const backupProviders: any[] = [];
-
-      // Create WalletStorageManager with active storage
-      // Constructor signature: WalletStorageManager(identityKey, active?, backups?)
-      const storageManager = new WalletStorageManager(keyDeriver.identityKey, activeStorage, backupProviders);
-      console.log('[buildWallet] Created WalletStorageManager with active storage');
-
-      const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
-      const wallet = new Wallet(signer, services, undefined, privilegedKeyManager);
-      newManagers.settingsManager = wallet.settingsManager;
+      // Create TS proxy that calls Go wallet via Wails bindings
+      const { WalletGoProxy } = await import('./WalletGoProxy');
+      const wallet = new WalletGoProxy();
       newManagers.wallet = wallet;
-      newManagers.storageManager = storageManager;
-      console.log('[buildWallet] Created Wallet, Signer, Services');
-
-      // If using remote storage, create it now and add it as active
-      if (useRemoteStorage) {
-        console.log('[buildWallet] Creating REMOTE storage client:', selectedStorageUrl);
-        const client = new StorageClient(wallet, selectedStorageUrl);
-        await client.makeAvailable();
-        await storageManager.addWalletStorageProvider(client);
-        console.log('[buildWallet] Remote storage added to WalletStorageManager');
-      }
-
-      // Get all stores and set the first one (primary) as active
-      const stores = storageManager.getStores();
-      if (stores && stores.length > 0) {
-        const activeStoreKey = stores[0].storageIdentityKey;
-        console.log('[buildWallet] Setting active storage:', activeStoreKey);
-        await storageManager.setActive(activeStoreKey);
-        console.log('[buildWallet] Active storage configured');
-      }
-
-      // Add backup storage providers if configured
-      if (backupStorageUrls && backupStorageUrls.length > 0) {
-        console.log('[buildWallet] Adding BACKUP storage providers:', backupStorageUrls.length);
-        for (const backupUrl of backupStorageUrls) {
-          try {
-            console.log('[buildWallet] Adding backup storage:', backupUrl);
-
-            // Handle LOCAL_STORAGE special case
-            if (backupUrl === 'LOCAL_STORAGE') {
-              const wailsStorage = new StorageWailsProxy(keyDeriver.identityKey, chain);
-              wailsStorage.setServices(services as any);
-              await wailsStorage.makeAvailable();
-              await storageManager.addWalletStorageProvider(wailsStorage as any);
-              console.log('[buildWallet] Local Wails storage added as backup');
-            } else {
-              // Remote storage client
-              const backupClient = new StorageClient(wallet, backupUrl);
-              await backupClient.makeAvailable();
-              await storageManager.addWalletStorageProvider(backupClient);
-              console.log('[buildWallet] Backup storage added:', backupUrl);
-            }
-          } catch (error: any) {
-            console.error('[buildWallet] Failed to add backup storage:', backupUrl, error);
-            toast.error(`Failed to connect to backup storage ${backupUrl}: ${error.message}`);
-          }
-        }
-      }
+      console.log('[buildWallet] Created WalletGoProxy');
 
       console.log('[buildWallet] Setting up permissions manager...');
-      // Setup permissions with provided callbacks.
-      const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, permissionsConfig);
+      // Setup permissions with provided callbacks (wraps the Go wallet proxy).
+      const permissionsManager = new WalletPermissionsManager(wallet as any, adminOriginator, permissionsConfig);
 
       permissionsManagerRef.current = permissionsManager;
 
@@ -1367,15 +1297,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }, [
     selectedNetwork,
-    selectedStorageUrl,
     adminOriginator,
     protocolPermissionCallback,
     basketAccessCallback,
     spendingAuthorizationCallback,
     certificateAccessCallback,
-    groupPermissionCallback,
-    useRemoteStorage,
-    backupStorageUrls
+    groupPermissionCallback
   ]);
 
   // ---- Enhanced Snapshot V3 with Config ----
@@ -1719,13 +1646,16 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     adminOriginator
   ]);
 
-  // When Settings manager becomes available, populate the user's settings
+  // When wallet becomes available, populate the user's settings from Go
   useEffect(() => {
     const loadSettings = async () => {
-      if (managers.settingsManager) {
+      if (managers.wallet) {
         try {
-          const userSettings = await managers.settingsManager.get();
-          setSettings(userSettings);
+          const { GetSettings } = await import('../../wailsjs/go/main/WalletService');
+          const settingsJSON = await GetSettings();
+          if (settingsJSON && settingsJSON !== '{}') {
+            setSettings(JSON.parse(settingsJSON));
+          }
         } catch (e) {
           // Unable to load settings, defaults are already loaded.
         }
@@ -1733,7 +1663,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     };
 
     loadSettings();
-  }, [managers]);
+  }, [managers.wallet]);
 
   const addBackupStorageUrl = useCallback(async (url: string) => {
     if (!managers.walletManager) {

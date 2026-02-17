@@ -22,12 +22,13 @@ type App struct {
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
+func NewApp(walletSvc *WalletService) *App {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	return &App{
-		logger: logger,
+		logger:    logger,
+		walletSvc: walletSvc,
 	}
 }
 
@@ -41,6 +42,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Start HTTP server for BRC-100 interface
 	a.httpServer = NewHTTPServer(a.logger)
+	a.httpServer.SetWalletService(a.walletSvc)
 	go func() {
 		if err := a.httpServer.Start(appCtx); err != nil {
 			a.logger.Error("HTTP server error", "error", err)

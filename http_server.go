@@ -45,10 +45,16 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	handler := s.corsMiddleware(mux)
 
 	// Generate self-signed certificate for HTTPS
-	certPEM, keyPEM, _, err := GenerateOrLoadSelfSignedCert()
+	certPEM, keyPEM, certPath, err := GenerateOrLoadSelfSignedCert()
 	if err != nil {
 		s.logger.Warn("Failed to generate SSL certificate, running HTTP only", "error", err)
 	} else {
+		// Ensure cert is trusted by the system (adds to macOS keychain)
+		if err := EnsureCertTrusted(certPath); err != nil {
+			s.logger.Warn("Failed to install certificate to system trust store", "error", err)
+		} else {
+			s.logger.Info("SSL certificate trusted by system")
+		}
 		// Start HTTPS server on port 2121
 		tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 		if err != nil {

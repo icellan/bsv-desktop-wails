@@ -17,8 +17,8 @@ var assets embed.FS
 var appIcon []byte
 
 func main() {
-	app := NewApp()
 	walletService := NewWalletService()
+	app := NewApp(walletService)
 	nativeService := NewNativeService()
 	storageProxyService := NewStorageProxyService()
 

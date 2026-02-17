@@ -10,7 +10,9 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -129,4 +131,46 @@ func generateNewCert(certPath, keyPath string) ([]byte, []byte, string, error) {
 	}
 
 	return certPEM, keyPEM, certPath, nil
+}
+
+// EnsureCertTrusted checks if the self-signed cert is trusted by the system
+// and attempts to install it if not. On macOS this adds it to the login keychain.
+func EnsureCertTrusted(certPath string) error {
+	if runtime.GOOS != "darwin" {
+		return nil // Only macOS for now
+	}
+
+	// Check if already prompted
+	promptedFlag := filepath.Join(filepath.Dir(certPath), ".ssl-prompted")
+	if _, err := os.Stat(promptedFlag); err == nil {
+		// Check if already trusted
+		if isCertTrustedMac() {
+			return nil
+		}
+	}
+
+	// Check if already trusted
+	if isCertTrustedMac() {
+		return nil
+	}
+
+	// Install cert to user login keychain (without -d to avoid needing admin elevation)
+	cmd := exec.Command("security", "add-trusted-cert", "-r", "trustRoot",
+		"-k", filepath.Join(os.Getenv("HOME"), "Library/Keychains/login.keychain-db"),
+		certPath)
+	if err := cmd.Run(); err != nil {
+		// Mark as prompted even on failure so we don't keep asking
+		os.WriteFile(promptedFlag, []byte(time.Now().Format(time.RFC3339)), 0o644)
+		return fmt.Errorf("failed to install certificate: %w", err)
+	}
+
+	// Mark as prompted
+	os.WriteFile(promptedFlag, []byte(time.Now().Format(time.RFC3339)), 0o644)
+	return nil
+}
+
+func isCertTrustedMac() bool {
+	cmd := exec.Command("security", "find-certificate", "-c", "localhost", "-p",
+		filepath.Join(os.Getenv("HOME"), "Library/Keychains/login.keychain-db"))
+	return cmd.Run() == nil
 }

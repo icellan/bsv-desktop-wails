@@ -10,12 +10,20 @@ export function GetNetwork() {
   return window['go']['main']['WalletService']['GetNetwork']();
 }
 
+export function GetSettings() {
+  return window['go']['main']['WalletService']['GetSettings']();
+}
+
 export function InitializeWallet(arg1, arg2) {
   return window['go']['main']['WalletService']['InitializeWallet'](arg1, arg2);
 }
 
 export function IsWalletReady() {
   return window['go']['main']['WalletService']['IsWalletReady']();
+}
+
+export function SetSettings(arg1) {
+  return window['go']['main']['WalletService']['SetSettings'](arg1);
 }
 
 export function ShutdownWallet() {
