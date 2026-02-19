@@ -1,0 +1,812 @@
+syntax = "proto3";
+
+option go_package = "./;blockchain_api";
+
+// Package blockchain_api defines the gRPC service interface for blockchain operations.
+package blockchain_api;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "model/model.proto";
+
+// BlockchainAPI service provides comprehensive blockchain management functionality.
+service BlockchainAPI {
+  // HealthGRPC checks the health status of the blockchain service.
+  rpc HealthGRPC (google.protobuf.Empty) returns (HealthResponse) {}
+
+  // AddBlock adds a new block to the blockchain.
+  // Called by BlockValidator to add validated blocks.
+  rpc AddBlock (AddBlockRequest) returns (google.protobuf.Empty) {}
+
+  // GetBlock retrieves a block by its hash.
+  rpc GetBlock (GetBlockRequest) returns (GetBlockResponse) {}
+
+  // GetBlocks retrieves multiple blocks starting from a specific hash.
+  rpc GetBlocks (GetBlocksRequest) returns (GetBlocksResponse) {}
+
+  // GetBlockByHeight retrieves a block at a specific height.
+  rpc GetBlockByHeight (GetBlockByHeightRequest) returns (GetBlockResponse) {}
+
+  // GetBlockByID retrieves a block by its id.
+  rpc GetBlockByID (GetBlockByIDRequest) returns (GetBlockResponse) {}
+
+  // GetNextBlockID retrieves the next available block ID.
+  rpc GetNextBlockID (google.protobuf.Empty) returns (GetNextBlockIDResponse) {}
+
+  // GetBlockStats retrieves statistical information about the blockchain.
+  rpc GetBlockStats (google.protobuf.Empty) returns (model.BlockStats) {}
+
+  // GetBlockGraphData retrieves data points for blockchain visualization.
+  rpc GetBlockGraphData (GetBlockGraphDataRequest) returns (model.BlockDataPoints) {}
+
+  // GetLastNBlocks retrieves the most recent N blocks from the blockchain.
+  rpc GetLastNBlocks (GetLastNBlocksRequest) returns (GetLastNBlocksResponse) {}
+
+  // GetLastNInvalidBlocks retrieves the most recent N blocks that have been marked as invalid.
+  rpc GetLastNInvalidBlocks (GetLastNInvalidBlocksRequest) returns (GetLastNInvalidBlocksResponse) {}
+
+  // GetSuitableBlock finds a suitable block for mining purposes.
+  rpc GetSuitableBlock (GetSuitableBlockRequest) returns (GetSuitableBlockResponse) {}
+
+  // GetHashOfAncestorBlock retrieves the hash of an ancestor block at a specified depth.
+  rpc GetHashOfAncestorBlock (GetHashOfAncestorBlockRequest) returns (GetHashOfAncestorBlockResponse) {}
+
+  // GetLatestBlockHeaderFromBlockLocator retrieves the latest block header using a block locator.
+  rpc GetLatestBlockHeaderFromBlockLocator (GetLatestBlockHeaderFromBlockLocatorRequest) returns (GetBlockHeaderResponse) {}
+
+  // GetBlockHeadersFromOldest retrieves block headers starting from the oldest block.
+  rpc GetBlockHeadersFromOldest (GetBlockHeadersFromOldestRequest) returns (GetBlockHeadersResponse) {}
+
+  // GetNextWorkRequired calculates the required proof of work for the next block.
+  rpc GetNextWorkRequired (GetNextWorkRequiredRequest) returns (GetNextWorkRequiredResponse) {}
+
+  // GetBlockExists checks if a block exists in the blockchain.
+  rpc GetBlockExists (GetBlockRequest) returns (GetBlockExistsResponse) {}
+
+  // GetBlockHeaders retrieves headers for multiple blocks.
+  rpc GetBlockHeaders(GetBlockHeadersRequest) returns (GetBlockHeadersResponse) {}
+
+  // GetBlockHeadersToCommonAncestor retrieves headers from a block to its common ancestor.
+  rpc GetBlockHeadersToCommonAncestor(GetBlockHeadersToCommonAncestorRequest) returns (GetBlockHeadersResponse) {}
+
+  // GetBlockHeadersFromCommonAncestor retrieves headers from a common ancestor to a target block.
+  rpc GetBlockHeadersFromCommonAncestor(GetBlockHeadersFromCommonAncestorRequest) returns (GetBlockHeadersResponse) {}
+
+  // GetBlockHeadersFromTill retrieves block headers between two specified blocks.
+  rpc GetBlockHeadersFromTill(GetBlockHeadersFromTillRequest) returns (GetBlockHeadersResponse) {}
+
+  // GetBlockHeadersFromHeight retrieves block headers starting from a specific height.
+  rpc GetBlockHeadersFromHeight(GetBlockHeadersFromHeightRequest) returns (GetBlockHeadersFromHeightResponse) {}
+
+  // GetBlockHeadersByHeight retrieves block headers between two specified heights.
+  rpc GetBlockHeadersByHeight(GetBlockHeadersByHeightRequest) returns (GetBlockHeadersByHeightResponse) {}
+
+  // GetBlocksByHeight retrieves full blocks between two specified heights.
+  rpc GetBlocksByHeight(GetBlocksByHeightRequest) returns (GetBlocksByHeightResponse) {}
+
+  // FindBlocksContainingSubtree finds all blocks that contain the specified subtree hash.
+  rpc FindBlocksContainingSubtree(FindBlocksContainingSubtreeRequest) returns (FindBlocksContainingSubtreeResponse) {}
+
+  // GetBlockHeaderIDs retrieves block header IDs for a range of blocks.
+  rpc GetBlockHeaderIDs(GetBlockHeadersRequest) returns (GetBlockHeaderIDsResponse) {}
+
+  // GetBestBlockHeader retrieves the header of the current best block.
+  rpc GetBestBlockHeader(google.protobuf.Empty) returns (GetBlockHeaderResponse) {}
+
+  // CheckBlockIsInCurrentChain verifies if specified blocks are in the main chain.
+  rpc CheckBlockIsInCurrentChain(CheckBlockIsCurrentChainRequest) returns (CheckBlockIsCurrentChainResponse) {}
+
+  // CheckBlockIsAncestorOfBlock verifies if specified blocks are ancestors of a given block.
+  // Used for double-spend detection on fork blocks where we check against the fork's ancestor chain.
+  rpc CheckBlockIsAncestorOfBlock(CheckBlockIsAncestorOfBlockRequest) returns (CheckBlockIsAncestorOfBlockResponse) {}
+
+  // GetChainTips retrieves information about all known tips in the block tree.
+  rpc GetChainTips(google.protobuf.Empty) returns (GetChainTipsResponse) {}
+
+  // GetBlockHeader retrieves the header of a specific block.
+  rpc GetBlockHeader(GetBlockHeaderRequest) returns (GetBlockHeaderResponse) {}
+
+  // InvalidateBlock marks a block as invalid in the blockchain.
+  rpc InvalidateBlock(InvalidateBlockRequest) returns (InvalidateBlockResponse) {}
+
+  // RevalidateBlock restores a previously invalidated block.
+  rpc RevalidateBlock(RevalidateBlockRequest) returns (google.protobuf.Empty) {}
+
+  // Subscribe creates a subscription for blockchain notifications.
+  rpc Subscribe (SubscribeRequest) returns (stream Notification) {}
+
+  // SendNotification broadcasts a notification to subscribers.
+  rpc SendNotification(Notification) returns (google.protobuf.Empty) {}
+
+  // GetState retrieves state data by key.
+  rpc GetState(GetStateRequest) returns (StateResponse) {}
+
+  // SetState stores state data with a key.
+  rpc SetState(SetStateRequest) returns (google.protobuf.Empty) {}
+
+  // GetBlockIsMined checks if a block is marked as mined.
+  rpc GetBlockIsMined(GetBlockIsMinedRequest) returns (GetBlockIsMinedResponse) {}
+
+  // SetBlockMinedSet marks a block as mined.
+  rpc SetBlockMinedSet(SetBlockMinedSetRequest) returns (google.protobuf.Empty) {}
+
+  // ClearBlockMinedSet resets the mined_set flag to false for a block.
+  rpc ClearBlockMinedSet(ClearBlockMinedSetRequest) returns (google.protobuf.Empty) {}
+
+  // GetBlocksMinedNotSet retrieves blocks not marked as mined.
+  rpc GetBlocksMinedNotSet(google.protobuf.Empty) returns (GetBlocksMinedNotSetResponse) {}
+
+  // SetBlockSubtreesSet marks a block's subtrees as set.
+  rpc SetBlockSubtreesSet(SetBlockSubtreesSetRequest) returns (google.protobuf.Empty) {}
+
+  // GetBlocksSubtreesNotSet retrieves blocks with unset subtrees.
+  rpc GetBlocksSubtreesNotSet(google.protobuf.Empty) returns (GetBlocksSubtreesNotSetResponse) {}
+
+  // SetBlockProcessedAt sets or clears the processed_at timestamp for a block.
+  rpc SetBlockProcessedAt (SetBlockProcessedAtRequest) returns (google.protobuf.Empty) {}
+
+  // SetBlockPersistedAt updates the persisted_at timestamp for a block.
+  rpc SetBlockPersistedAt(SetBlockPersistedAtRequest) returns (google.protobuf.Empty) {}
+
+  // GetBlocksNotPersisted retrieves blocks that haven't been persisted to blob storage yet.
+  rpc GetBlocksNotPersisted(GetBlocksNotPersistedRequest) returns (GetBlocksNotPersistedResponse) {}
+
+  // FSM-related methods
+
+  // SendFSMEvent sends an event to the blockchain FSM.
+  rpc SendFSMEvent(SendFSMEventRequest) returns (GetFSMStateResponse) {}
+
+  // GetFSMCurrentState retrieves the current state of the FSM.
+  rpc GetFSMCurrentState(google.protobuf.Empty) returns (GetFSMStateResponse) {}
+
+  // WaitFSMToTransitionToGivenState waits for FSM to reach a specific state.
+  rpc WaitFSMToTransitionToGivenState(WaitFSMToTransitionRequest) returns (google.protobuf.Empty) {}
+
+  // WaitUntilFSMTransitionFromIdleState waits for FSM to transition from IDLE state.
+  rpc WaitUntilFSMTransitionFromIdleState(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // Run transitions the blockchain service to running state.
+  rpc Run(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // CatchUpBlocks initiates block catch-up process.
+  rpc CatchUpBlocks(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // LegacySync initiates legacy synchronization process.
+  rpc LegacySync(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // Idle marks the service as idle.
+  rpc Idle(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // ReportPeerFailure notifies about peer download failures (catchup, subtree, block, etc).
+  rpc ReportPeerFailure(ReportPeerFailureRequest) returns (google.protobuf.Empty) {}
+
+  // Legacy sync methods
+
+  // GetBlockLocator retrieves a block locator for chain synchronization.
+  rpc GetBlockLocator(GetBlockLocatorRequest) returns (GetBlockLocatorResponse) {}
+
+  // LocateBlockHeaders finds block headers using a locator.
+  rpc LocateBlockHeaders(LocateBlockHeadersRequest) returns (LocateBlockHeadersResponse) {}
+
+  // GetBestHeightAndTime retrieves the current best height and median time.
+  rpc GetBestHeightAndTime(google.protobuf.Empty) returns (GetBestHeightAndTimeResponse) {}
+
+  // Blob deletion scheduling methods
+
+  // ScheduleBlobDeletion schedules a blob for deletion at a specific block height.
+  rpc ScheduleBlobDeletion(ScheduleBlobDeletionRequest) returns (ScheduleBlobDeletionResponse) {}
+
+  // CancelBlobDeletion cancels a previously scheduled blob deletion.
+  rpc CancelBlobDeletion(CancelBlobDeletionRequest) returns (CancelBlobDeletionResponse) {}
+
+  // ListScheduledDeletions lists all scheduled blob deletions with optional filtering.
+  rpc ListScheduledDeletions(ListScheduledDeletionsRequest) returns (ListScheduledDeletionsResponse) {}
+
+  // GetPendingBlobDeletions retrieves blob deletions ready for processing at a specific height.
+  rpc GetPendingBlobDeletions(GetPendingBlobDeletionsRequest) returns (GetPendingBlobDeletionsResponse) {}
+
+  // RemoveBlobDeletion removes a blob deletion from the schedule (after successful deletion).
+  rpc RemoveBlobDeletion(RemoveBlobDeletionRequest) returns (google.protobuf.Empty) {}
+
+  // IncrementBlobDeletionRetry increments the retry counter for a failed blob deletion.
+  rpc IncrementBlobDeletionRetry(IncrementBlobDeletionRetryRequest) returns (IncrementBlobDeletionRetryResponse) {}
+
+  // CompleteBlobDeletions completes multiple blob deletions in a single call (batch API).
+  // This is more efficient than calling RemoveBlobDeletion multiple times.
+  rpc CompleteBlobDeletions(CompleteBlobDeletionsRequest) returns (CompleteBlobDeletionsResponse) {}
+
+  // AcquireBlobDeletionBatch acquires a batch of deletions with locking for processing.
+  // This uses SELECT...FOR UPDATE SKIP LOCKED to ensure only one pruner processes each batch.
+  rpc AcquireBlobDeletionBatch(AcquireBlobDeletionBatchRequest) returns (AcquireBlobDeletionBatchResponse) {}
+
+  // CompleteBlobDeletionBatch completes a previously acquired batch in a single call.
+  // This reports all results (successes and failures) for the batch.
+  rpc CompleteBlobDeletionBatch(CompleteBlobDeletionBatchRequest) returns (google.protobuf.Empty) {}
+}
+
+// HealthResponse represents the health status of the blockchain service.
+message HealthResponse {
+  bool ok = 1;                                    // Overall health status
+  string details = 2;                            // Detailed health information
+  google.protobuf.Timestamp timestamp = 3;       // Timestamp of the health check
+}
+
+// AddBlockRequest contains data for adding a new block to the blockchain.
+message AddBlockRequest {
+  bytes header = 1;                             // Block header
+  repeated bytes subtree_hashes = 2;            // Merkle tree hashes
+  bytes coinbase_tx = 3;                        // Coinbase transaction
+  uint64 transaction_count = 4;                 // Number of transactions
+  uint64 size_in_bytes = 5;                     // Block size
+  bool external = 6;                            // External block flag
+  string peer_id = 7;                           // Peer identifier
+  bool optionMinedSet = 8;                      // Option to mark block as mined
+  bool optionSubtreesSet = 9;                   // Option to mark subtrees as set
+  bool optionInvalid = 10;                      // Option to invalidate block when adding
+  uint64 optionID = 11;                            // Optional block ID
+}
+
+// GetBlockRequest represents a request to retrieve a block by its hash.
+message GetBlockRequest {
+  bytes hash = 1;    // Hash of the block to retrieve
+}
+
+// GetBlocksRequest represents a request to retrieve multiple blocks.
+message GetBlocksRequest {
+  bytes hash = 1;    // Starting block hash
+  uint32 count = 2;  // Number of blocks to retrieve
+}
+
+// GetBlocksResponse contains multiple serialized blocks.
+message GetBlocksResponse {
+  repeated bytes blocks = 1;  // List of serialized blocks
+}
+
+// GetBlockByHeightRequest represents a request to retrieve a block at a specific height.
+message GetBlockByHeightRequest {
+  uint32 height = 1;  // Block height to retrieve
+}
+
+// GetBlockByIDRequest represents a request to retrieve a block by its ID.
+message GetBlockByIDRequest {
+  uint64 id = 1;  // Block ID to retrieve
+}
+
+// GetNextBlockIDResponse represents the response containing the next available block ID.
+message GetNextBlockIDResponse {
+  uint64 next_block_id = 1;  // Next available block ID
+}
+
+// GetBlockInChainByHeightHashRequest represents a request to retrieve a block by height in a specific chain.
+message GetBlockInChainByHeightHashRequest {
+  uint32 height = 1;      // Target block height
+  bytes start_hash = 2;   // Starting block hash defining the chain
+}
+
+// GetBlockResponse contains detailed block information.
+message GetBlockResponse {
+  bytes header = 1;                    // Block header bytes
+  uint32 height = 2;                   // Block height
+  bytes coinbase_tx = 3;               // Coinbase transaction bytes
+  uint64 transaction_count = 4;        // Total number of transactions
+  repeated bytes subtree_hashes = 5;   // Merkle tree subtree hashes
+  uint64 size_in_bytes = 6;            // Total block size in bytes
+  uint32 id = 7;                       // Block identifier
+}
+
+// GetFullBlockResponse contains a complete serialized block.
+message GetFullBlockResponse {
+  bytes full_block_bytes = 1;  // Complete serialized block data
+}
+
+// GetBlockGraphDataRequest specifies parameters for retrieving blockchain visualization data.
+message GetBlockGraphDataRequest {
+  uint64 period_millis = 1;  // Time period in milliseconds
+}
+
+// GetBlockExistsResponse indicates whether a block exists.
+message GetBlockExistsResponse {
+  bool exists = 1;  // True if the block exists
+}
+
+// GetMedianTimeRequest requests median time calculation for a block.
+message GetMedianTimeRequest {
+  bytes blockHash = 1;  // Hash of the block
+}
+
+// GetBlockHeadersRequest requests multiple block headers.
+message GetBlockHeadersRequest {
+  bytes startHash = 1;           // Starting block hash
+  uint64 numberOfHeaders = 2;    // Number of headers to retrieve
+}
+
+// swagger:model GetBlockHeadersToCommonAncestorRequest
+message GetBlockHeadersToCommonAncestorRequest {
+  bytes targetHash = 1;
+  repeated bytes blockLocatorHashes = 2;
+  uint32 maxHeaders = 3;
+}
+
+// swagger:model GetBlockHeadersFromCommonAncestor
+message GetBlockHeadersFromCommonAncestorRequest {
+  bytes targetHash = 1;           // Target block hash
+  repeated bytes blockLocatorHashes = 2;  // Block locator hashes
+  uint32 maxHeaders = 3;          // Maximum number of headers to retrieve
+}
+
+// swagger:model GetBlockHeadersResponse
+
+// GetBlockHeadersResponse contains multiple block headers and their metadata.
+message GetBlockHeadersResponse {
+  repeated bytes blockHeaders = 1;  // List of serialized block headers
+  repeated bytes metas = 2;         // List of serialized metadata
+}
+
+// GetBlockHeadersFromTillRequest requests headers between two blocks.
+message GetBlockHeadersFromTillRequest {
+  bytes startHash = 1;  // Starting block hash
+  bytes endHash = 2;    // Ending block hash
+}
+
+// GetBlockHeadersFromHeightRequest requests headers starting from a height.
+message GetBlockHeadersFromHeightRequest {
+  uint32 startHeight = 1;  // Starting height
+  uint32 limit = 2;        // Maximum number of headers to retrieve
+}
+
+// GetBlockHeadersFromHeightResponse contains headers and metadata from a height.
+message GetBlockHeadersFromHeightResponse {
+  repeated bytes blockHeaders = 1;  // List of serialized block headers
+  repeated bytes metas = 2;         // List of serialized metadata
+}
+
+// GetBlockHeadersByHeightRequest requests headers between two heights.
+message GetBlockHeadersByHeightRequest {
+  uint32 startHeight = 1;  // Starting height
+  uint32 endHeight = 2;    // Ending height
+}
+
+// GetBlockHeadersByHeightResponse contains headers and metadata between heights.
+message GetBlockHeadersByHeightResponse {
+  repeated bytes blockHeaders = 1;  // List of serialized block headers
+  repeated bytes metas = 2;         // List of serialized metadata
+}
+
+// GetBlocksByHeightRequest requests full blocks between two heights.
+message GetBlocksByHeightRequest {
+  uint32 startHeight = 1;  // Starting height
+  uint32 endHeight = 2;    // Ending height
+}
+
+// GetBlocksByHeightResponse contains full blocks between heights.
+message GetBlocksByHeightResponse {
+  repeated bytes blocks = 1;  // List of serialized full blocks
+}
+
+// FindBlocksContainingSubtreeRequest specifies a subtree hash to search for.
+message FindBlocksContainingSubtreeRequest {
+  bytes subtree_hash = 1;  // Subtree hash to find
+  uint32 max_blocks = 2;   // Maximum number of blocks to return (0 = no limit)
+}
+
+// FindBlocksContainingSubtreeResponse contains blocks that contain the subtree.
+message FindBlocksContainingSubtreeResponse {
+  repeated bytes blocks = 1;  // List of serialized full blocks containing the subtree
+}
+
+// GetBlockHeaderIDsResponse contains block header identifiers.
+message GetBlockHeaderIDsResponse {
+  repeated uint32 ids = 1;  // List of block header IDs
+}
+
+// GetMedianTimeResponse contains block timestamp information.
+message GetMedianTimeResponse {
+  repeated uint32 block_header_time = 1;  // Timestamps of the last 11 (+1) blocks
+}
+
+// GetBlockHeaderRequest requests a specific block header.
+message GetBlockHeaderRequest {
+  bytes blockHash = 1;  // Hash of the block
+}
+
+// CheckBlockIsCurrentChainRequest checks if blocks are in the main chain.
+message CheckBlockIsCurrentChainRequest {
+  repeated uint32 blockIDs = 1;  // List of block IDs to check
+}
+
+// InvalidateBlockRequest requests to invalidate a block.
+message InvalidateBlockRequest {
+  bytes blockHash = 1;  // Hash of the block to invalidate
+}
+
+// InvalidateBlockResponse contains the result of block invalidation.
+message InvalidateBlockResponse {
+  repeated bytes invalidatedBlocks = 1;  // List of invalidated block hashes
+}
+
+// RevalidateBlockRequest requests to revalidate a block.
+message RevalidateBlockRequest {
+  bytes blockHash = 1;  // Hash of the block to revalidate
+}
+
+// GetBlockHeaderResponse contains detailed block header information.
+message GetBlockHeaderResponse {
+  bytes blockHeader = 1;      // Serialized block header
+  uint32 id = 2;              // Block identifier
+  uint32 height = 3;          // Block height
+  uint64 tx_count = 4;        // Transaction count
+  uint64 size_in_bytes = 5;   // Block size
+  string miner = 6;           // Miner identifier
+  string peer_id = 7;         // Peer identifier
+  uint32 block_time = 8;      // Block timestamp
+  uint32 timestamp = 9;       // Processing timestamp
+  bytes chain_work = 10;      // Accumulated chain work
+  bool mined_set = 11;        // Mined status
+  bool subtrees_set = 12;     // Subtrees status
+  bool invalid = 13;          // Validity status
+  google.protobuf.Timestamp processed_at = 14; // Timestamp when block was processed
+}
+
+// CheckBlockIsCurrentChainResponse indicates if blocks are in the main chain.
+message CheckBlockIsCurrentChainResponse {
+  bool isPartOfCurrentChain = 1;  // True if blocks are in main chain
+}
+
+// CheckBlockIsAncestorOfBlockRequest checks if blocks are ancestors of a specific block.
+message CheckBlockIsAncestorOfBlockRequest {
+  repeated uint32 blockIDs = 1;  // List of block IDs to check
+  bytes blockHash = 2;           // Hash of the block to check ancestry against
+}
+
+// CheckBlockIsAncestorOfBlockResponse indicates if any blocks are ancestors.
+message CheckBlockIsAncestorOfBlockResponse {
+  bool isAncestor = 1;  // True if any block ID is an ancestor
+}
+
+// SubscribeRequest initiates a subscription to blockchain events.
+message SubscribeRequest {
+  string source = 1;  // Source identifier for the subscription
+}
+
+// Notification represents a blockchain event notification.
+message Notification {
+  model.NotificationType type = 1;  // Type of notification
+  bytes hash = 2;                   // Related block hash
+  string base_URL = 3;              // Base URL for additional data
+  NotificationMetadata metadata = 4; // Additional metadata
+}
+
+// NotificationMetadata contains additional notification information.
+message NotificationMetadata {
+  map<string, string> metadata = 1;  // Key-value pairs of metadata
+}
+
+// GetStateRequest requests state data by key.
+message GetStateRequest {
+  string key = 1;  // State key to retrieve
+}
+
+// StateResponse contains state data.
+message StateResponse {
+  bytes data = 1;  // State data
+}
+
+// SetStateRequest sets state data for a key.
+message SetStateRequest {
+  string key = 1;   // State key
+  bytes data = 2;   // State data to store
+}
+
+// GetBlockIsMinedRequest checks if a block is marked as mined.
+message GetBlockIsMinedRequest {
+  bytes blockHash = 1;  // Hash of the block
+}
+
+// GetBlockIsMinedResponse indicates if a block is marked as mined.
+message GetBlockIsMinedResponse {
+  bool isMined = 1;  // True if the block is marked as mined
+}
+
+// GetLastNBlocksRequest requests the most recent blocks.
+message GetLastNBlocksRequest {
+  int64 numberOfBlocks = 1;   // Number of blocks to retrieve
+  bool includeOrphans = 2;    // Whether to include orphaned blocks
+  uint32 fromHeight = 3;      // Starting height
+}
+
+// GetLastNBlocksResponse contains recent block information.
+message GetLastNBlocksResponse {
+  repeated model.BlockInfo blocks = 1;  // List of block information
+}
+
+// GetLastNInvalidBlocksRequest requests the most recent invalid blocks.
+message GetLastNInvalidBlocksRequest {
+  int64 n = 1;  // Number of blocks to retrieve
+}
+
+// GetLastNInvalidBlocksResponse contains recent invalid block information.
+message GetLastNInvalidBlocksResponse {
+  repeated model.BlockInfo blocks = 1;  // List of block information
+}
+
+// GetSuitableBlockRequest requests a suitable block for mining.
+message GetSuitableBlockRequest {
+  bytes hash = 1;  // Reference block hash
+}
+
+// GetSuitableBlockResponse contains a suitable block for mining.
+message GetSuitableBlockResponse {
+  model.SuitableBlock block = 1;  // Suitable block information
+}
+
+// GetHashOfAncestorBlockRequest requests an ancestor block hash.
+message GetHashOfAncestorBlockRequest {
+  bytes hash = 1;     // Starting block hash
+  uint32 depth = 2;   // Number of generations to go back
+}
+
+// GetLatestBlockHeaderFromBlockLocatorRequest
+message GetLatestBlockHeaderFromBlockLocatorRequest {
+  bytes bestBlockHash = 1;                // Best block hash
+  repeated bytes blockLocatorHashes = 2;  // Block locator hashes
+}
+
+// GetBlockHeadersFromOldestRequest retrieves block headers starting from the oldest block.
+message GetBlockHeadersFromOldestRequest {
+  bytes chainTipHash = 1;     // Chain tip hash
+  bytes targetHash = 2;       // Target block hash
+  uint64 numberOfHeaders = 3; // Maximum number of hashes to return
+}
+
+// GetHashOfAncestorBlockResponse contains an ancestor block hash.
+message GetHashOfAncestorBlockResponse {
+  bytes hash = 1;  // Ancestor block hash
+}
+
+// GetNextWorkRequiredRequest requests difficulty calculation.
+message GetNextWorkRequiredRequest {
+  bytes previousBlockHash = 1;  // Reference block hash
+  int64 currentBlockTime = 2;  // Current block time is only used for emaergency difficulty adjustment on testnet-type networks
+}
+
+// GetNextWorkRequiredResponse contains difficulty target.
+message GetNextWorkRequiredResponse {
+  bytes bits = 1;  // Difficulty bits
+}
+
+// SetBlockMinedSetRequest marks a block as mined.
+message SetBlockMinedSetRequest {
+  bytes blockHash = 1;  // Hash of the mined block
+}
+
+message ClearBlockMinedSetRequest {
+  bytes blockHash = 1;  // Hash of the block to reset
+}
+
+// GetBlocksMinedNotSetResponse contains blocks not marked as mined.
+message GetBlocksMinedNotSetResponse {
+  repeated bytes blockBytes = 1;  // List of serialized blocks
+}
+
+// SetBlockSubtreesSetRequest marks block subtrees as set.
+message SetBlockSubtreesSetRequest {
+  bytes blockHash = 1;  // Block hash
+}
+
+// GetBlocksSubtreesNotSetResponse contains blocks with unset subtrees.
+message GetBlocksSubtreesNotSetResponse {
+  repeated bytes blockBytes = 1;  // List of serialized blocks
+}
+
+// SetBlockProcessedAtRequest defines parameters for setting or clearing a block's processed_at timestamp.
+message SetBlockProcessedAtRequest {
+  // Block hash to set or clear the processed_at timestamp for
+  bytes block_hash = 1;
+
+  // If true, the processed_at timestamp will be cleared (set to NULL)
+  // If false, the processed_at timestamp will be set to the current time
+  bool clear = 2;
+}
+
+// GetFSMStateResponse contains current FSM state.
+message GetFSMStateResponse {
+  FSMStateType state = 1;  // Current FSM state
+}
+
+// WaitFSMToTransitionRequest specifies target FSM state.
+message WaitFSMToTransitionRequest {
+  FSMStateType state = 1;  // Target FSM state
+}
+
+// SendFSMEventRequest triggers an FSM event.
+message SendFSMEventRequest {
+  FSMEventType event = 1;  // FSM event to trigger
+}
+
+// swagger:enum FSMEventType
+enum FSMEventType {
+  STOP = 0;
+  RUN = 1;
+  CATCHUPBLOCKS = 2;
+  LEGACYSYNC = 3;
+}
+
+// FSMStateType defines possible states of the blockchain FSM.
+enum FSMStateType {
+  IDLE = 0;           // Service is idle
+  RUNNING = 1;        // Service is running normally
+  CATCHINGBLOCKS = 2; // Service is catching up blocks
+  LEGACYSYNCING = 3;  // Service is in legacy sync mode
+}
+
+// GetBlockLocatorRequest requests a block locator.
+message GetBlockLocatorRequest {
+  bytes hash = 1;     // Reference block hash
+  uint32 height = 2;  // Reference block height
+}
+
+// GetBlockLocatorResponse contains block locator data.
+message GetBlockLocatorResponse {
+  repeated bytes locator = 1;  // Block locator hashes
+}
+
+// LocateBlockHeadersRequest requests headers using a locator.
+message LocateBlockHeadersRequest {
+  repeated bytes locator = 1;  // Block locator
+  bytes hash_stop = 2;         // Stop hash
+  uint32 max_hashes = 3;       // Maximum number of hashes
+}
+
+// LocateBlockHeadersResponse contains located block headers.
+message LocateBlockHeadersResponse {
+  repeated bytes block_headers = 1;  // List of block headers
+}
+
+// GetBestHeightAndTimeResponse contains chain tip information.
+message GetBestHeightAndTimeResponse {
+  uint32 height = 1;  // Best block height
+  uint32 time = 2;    // Median time
+}
+
+// GetChainTipsResponse contains information about all known tips in the block tree.
+message GetChainTipsResponse {
+  repeated model.ChainTip tips = 1;  // List of chain tips
+}
+
+// ReportPeerFailureRequest reports a peer download failure to the blockchain service.
+message ReportPeerFailureRequest {
+  bytes hash = 1;            // Hash of the block/subtree being processed
+  string peer_id = 2;        // Identifier of the failing peer
+  string failure_type = 3;   // Type of failure (e.g., "catchup", "subtree", "block")
+  string reason = 4;         // Description of the failure
+}
+
+// SetBlockPersistedAtRequest marks a block as persisted.
+message SetBlockPersistedAtRequest {
+  bytes block_hash = 1;  // Hash of the persisted block
+}
+
+// GetBlocksNotPersistedRequest requests blocks not yet persisted to blob storage.
+message GetBlocksNotPersistedRequest {
+  int32 limit = 1;  // Maximum number of blocks to return
+}
+
+// GetBlocksNotPersistedResponse contains blocks not yet persisted.
+message GetBlocksNotPersistedResponse {
+  repeated bytes block_bytes = 1;  // List of serialized blocks
+}
+
+// Blob deletion scheduling messages
+// Note: store_type values map to storetypes.BlobStoreType:
+// 0=TXSTORE, 1=SUBTREESTORE, 2=BLOCKSTORE, 3=TEMPSTORE, 4=BLOCKPERSISTERSTORE
+
+message ScheduleBlobDeletionRequest {
+  bytes blob_key = 1;
+  string file_type = 2;
+  int32 store_type = 3;
+  uint32 delete_at_height = 4;
+}
+
+message ScheduleBlobDeletionResponse {
+  int64 deletion_id = 1;
+  bool scheduled = 2;
+  string message = 3;
+}
+
+message CancelBlobDeletionRequest {
+  bytes blob_key = 1;
+  string file_type = 2;
+  int32 store_type = 3;
+  string cancel_reason = 4;
+}
+
+message CancelBlobDeletionResponse {
+  bool cancelled = 1;
+  string message = 2;
+}
+
+message ListScheduledDeletionsRequest {
+  uint32 min_height = 1;
+  uint32 max_height = 2;
+  int32 store_type = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+  bool filter_by_store = 6;
+}
+
+message ScheduledDeletion {
+  int64 id = 1;
+  bytes blob_key = 2;
+  string file_type = 3;
+  int32 store_type = 4;
+  uint32 delete_at_height = 5;
+  uint32 retry_count = 6;
+}
+
+message ListScheduledDeletionsResponse {
+  repeated ScheduledDeletion deletions = 1;
+  int32 total_count = 2;
+}
+
+message GetPendingBlobDeletionsRequest {
+  uint32 height = 1;
+  int32 limit = 2;
+}
+
+message GetPendingBlobDeletionsResponse {
+  repeated ScheduledDeletion deletions = 1;
+}
+
+message RemoveBlobDeletionRequest {
+  int64 deletion_id = 1;
+}
+
+message IncrementBlobDeletionRetryRequest {
+  int64 deletion_id = 1;
+  int32 max_retries = 2;
+}
+
+message IncrementBlobDeletionRetryResponse {
+  bool should_remove = 1;
+  int32 new_retry_count = 2;
+}
+
+// Batch completion API messages
+
+message CompleteBlobDeletionsRequest {
+  repeated int64 completed_ids = 1;  // IDs of successfully deleted blobs
+  repeated int64 failed_ids = 2;     // IDs of deletions that failed (will increment retry count)
+  int32 max_retries = 3;             // Maximum retries for failed deletions
+}
+
+message CompleteBlobDeletionsResponse {
+  int32 removed_count = 1;           // Number of deletions removed (completed or max retries)
+  int32 retry_incremented_count = 2; // Number of deletions with incremented retry count
+}
+
+// Batch acquisition API messages (with locking)
+
+message AcquireBlobDeletionBatchRequest {
+  uint32 height = 1;
+  int32 limit = 2;
+  int32 lock_timeout_seconds = 3;  // Optional: how long to hold the lock (default: 300s)
+}
+
+message AcquireBlobDeletionBatchResponse {
+  string batch_token = 1;
+  repeated ScheduledDeletion deletions = 2;
+}
+
+message CompleteBlobDeletionBatchRequest {
+  string batch_token = 1;
+  repeated int64 completed_ids = 2;
+  repeated int64 failed_ids = 3;
+  int32 max_retries = 4;
+}
+
+message BatchTokenInfo {
+  string token = 1;
+  int64 acquired_at = 2;  // Unix timestamp
+  int32 deletion_count = 3;
+  repeated int64 deletion_ids = 4;
+}

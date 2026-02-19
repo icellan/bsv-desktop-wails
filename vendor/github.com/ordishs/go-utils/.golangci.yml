@@ -1,0 +1,43 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+issues:
+  # Exclude generated protobuf files from linting
+  exclude-rules:
+    - path: ".*\\.pb\\.go$"
+      linters:
+        - staticcheck
+        - gosec
+        - errcheck
+        - govet
+    - path: "_test\\.go"
+      linters:
+        - gosec
+
+linters:
+  enable:
+    - staticcheck
+    - gosec
+    - errcheck
+    - govet
+    - gofmt
+    - goimports
+    - ineffassign
+    - misspell
+    - unconvert
+    - unused
+    - gocritic
+
+linters-settings:
+  staticcheck:
+    # Don't check generated files
+    checks: ["all", "-SA1019"]
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style

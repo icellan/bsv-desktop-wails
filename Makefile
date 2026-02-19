@@ -42,14 +42,14 @@ build: frontend ## Production build for current platform
 	@echo "=== Building $(APP_NAME) $(CLEAN_VERSION) ==="
 	@mkdir -p $(OUTPUT_DIR)
 	$(CGO_FLAGS) CGO_LDFLAGS="$(CGO_LDFLAGS)" \
-		go build -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
+		go build -mod=vendor -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
 	@echo "Binary: $(OUTPUT_DIR)/$(APP_NAME)"
 
 build-mac: frontend ## macOS .app bundle
 	@echo "=== Building macOS .app bundle ==="
 	@mkdir -p $(OUTPUT_DIR)
 	$(CGO_FLAGS) CGO_LDFLAGS="-framework UniformTypeIdentifiers" \
-		go build -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
+		go build -mod=vendor -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
 	@# Create .app bundle structure
 	@mkdir -p "$(OUTPUT_DIR)/$(APP_NAME).app/Contents/MacOS"
 	@mkdir -p "$(OUTPUT_DIR)/$(APP_NAME).app/Contents/Resources"
@@ -67,14 +67,14 @@ build-win: frontend ## Windows build (requires Windows or cross-compile)
 	@echo "=== Building Windows .exe ==="
 	@mkdir -p $(OUTPUT_DIR)
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
-		go build -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS) -H windowsgui' -o $(OUTPUT_DIR)/$(APP_NAME).exe .
+		go build -mod=vendor -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS) -H windowsgui' -o $(OUTPUT_DIR)/$(APP_NAME).exe .
 	@echo "Binary: $(OUTPUT_DIR)/$(APP_NAME).exe"
 
 build-linux: frontend ## Linux build
 	@echo "=== Building Linux binary ==="
 	@mkdir -p $(OUTPUT_DIR)
 	CGO_ENABLED=1 \
-		go build -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
+		go build -mod=vendor -tags $(BUILD_TAGS) -ldflags '$(LDFLAGS)' -o $(OUTPUT_DIR)/$(APP_NAME) .
 	@echo "Binary: $(OUTPUT_DIR)/$(APP_NAME)"
 
 bindings: ## Regenerate Wails TypeScript bindings

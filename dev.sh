@@ -33,7 +33,7 @@ cd ..
 # Step 2: Build Go binary with dev tags
 echo "[2/3] Building Go binary (dev mode)..."
 CGO_ENABLED=1 CGO_LDFLAGS="-framework UniformTypeIdentifiers" \
-  go build -tags dev,desktop -o "$OUTPUT_DIR/$OUTPUT_NAME" .
+  go build -mod=vendor -tags dev,desktop -o "$OUTPUT_DIR/$OUTPUT_NAME" .
 
 # Step 3: Run
 echo "[3/3] Starting BSV Desktop..."

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "github.com/bsv-blockchain/teranode/stores/utxo";
+
+package txo;
+
+// Status represents the current state of a UTXO.
+enum Status {
+  // Status_OK indicates the UTXO is valid and spendable
+  OK = 0;
+  // Status_SPENT indicates the UTXO has been spent
+  SPENT = 1;
+  // Status_IMMATURE indicates the UTXO is a coinbase and is not yet spendable
+  IMMATURE = 2;
+  // Status_NOT_FOUND indicates the UTXO does not exist
+  NOT_FOUND = 3;
+  // Status_ALREADY_EXISTS indicates an attempt to create a duplicate UTXO
+  ALREADY_EXISTS = 4;
+  // Status_FROZEN indicates the UTXO has been frozen by the alert system
+  FROZEN = 5;
+  // Status_CONFLICTING indicates the UTXO is in conflict with another UTXO and not spendable
+  CONFLICTING = 6;
+  // Status_LOCKED indicates the UTXO is locked and not spendable
+  LOCKED = 7;
+}

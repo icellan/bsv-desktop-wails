@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+option go_package = "./;blockassembly_api";
+
+package blockassembly_api;
+
+import "model/model.proto";
+
+import "google/protobuf/timestamp.proto";
+
+/**
+ * BlockAssemblyAPI Service
+ * Responsible for assembling new blocks and managing the blockchain's block creation process.
+ * This service handles transaction management, mining operations, and block state management.
+ */
+service BlockAssemblyAPI {
+  // HealthGRPC checks the health status of the block assembly service.
+  // Returns detailed health information including service status and timestamp.
+  rpc HealthGRPC (EmptyMessage) returns (HealthResponse) {}
+
+  // AddTx adds a single transaction to the next available subtree.
+  // The transaction will be included in block assembly for mining.
+  rpc AddTx (AddTxRequest) returns (AddTxResponse) {}
+
+  // RemoveTx removes a transaction from consideration for block inclusion.
+  // This is useful for handling double-spends or invalid transactions.
+  rpc RemoveTx (RemoveTxRequest) returns (EmptyMessage) {}
+
+  // AddTxBatch efficiently adds multiple transactions in a single request.
+  // Provides better performance than multiple individual AddTx calls.
+  rpc AddTxBatch (AddTxBatchRequest) returns (AddTxBatchResponse) {}
+
+  // AddTxBatchColumnar efficiently adds multiple transactions using columnar data format.
+  // This format reduces CPU usage by 15-20% and GC pressure by 50% compared to AddTxBatch.
+  // Uses column-oriented storage for better cache locality and fewer allocations.
+  rpc AddTxBatchColumnar (AddTxBatchColumnarRequest) returns (AddTxBatchResponse) {}
+
+  // GetMiningCandidate retrieves a block template ready for mining.
+  // Includes all necessary components for miners to begin work.
+  rpc GetMiningCandidate (GetMiningCandidateRequest) returns (model.MiningCandidate) {}
+
+  // GetCurrentDifficulty retrieves the current network mining difficulty.
+  // Used by miners to understand the current mining requirements.
+  rpc GetCurrentDifficulty (EmptyMessage) returns (GetCurrentDifficultyResponse) {}
+
+  // SubmitMiningSolution submits a solved block to the network.
+  // Includes the proof-of-work solution and block details.
+  rpc SubmitMiningSolution (SubmitMiningSolutionRequest) returns (OKResponse) {}
+
+  // ResetBlockAssembly resets the block assembly state.
+  // Useful for handling reorgs or recovering from errors.
+  rpc ResetBlockAssembly (EmptyMessage) returns (EmptyMessage) {}
+
+  // ResetBlockAssemblyFully performs a complete reset of the block assembly state.
+  // This includes clearing all transactions and resetting internal structures.
+  // This will traverse the whole UTXO set and is more intensive than a standard reset.
+  rpc ResetBlockAssemblyFully (EmptyMessage) returns (EmptyMessage) {}
+
+  // GetBlockAssemblyState retrieves the current state of block assembly.
+  // Provides detailed information about the assembly process status.
+  rpc GetBlockAssemblyState (EmptyMessage) returns (StateMessage) {}
+
+  // GenerateBlocks creates new blocks (typically for testing purposes).
+  // Allows specification of block count and recipient address.
+  rpc GenerateBlocks (GenerateBlocksRequest) returns (EmptyMessage) {}
+
+  // CheckBlockAssembly checks the current state of block assembly.
+  // This verifies that the block assembly and subtree processor are functioning correctly.
+  rpc CheckBlockAssembly (EmptyMessage) returns (OKResponse) {}
+
+  // CheckBlockAssembly checks the current state of block assembly.
+  // This verifies that the block assembly and subtree processor are functioning correctly.
+  rpc GetBlockAssemblyBlockCandidate (EmptyMessage) returns (GetBlockAssemblyBlockCandidateResponse) {}
+
+  // GetBlockAssemblyTxs retrieves the transactions currently being assembled in the block assembly.
+  // This provides visibility into the transactions that are candidates for inclusion in the next block.
+  // NOTE: this method is primarily for debugging purposes and may not be suitable for production use.
+  rpc GetBlockAssemblyTxs (EmptyMessage) returns (GetBlockAssemblyTxsResponse) {}
+}
+
+// An empty message used as a placeholder or a request with no data.
+message EmptyMessage {}
+
+// Contains the health status of the service. Includes an 'ok' flag indicating health status, details providing more context, and a timestamp.
+message HealthResponse {
+  bool ok = 1; // true if the service is healthy
+  string details = 2; // optional, human-readable details
+  google.protobuf.Timestamp timestamp = 3; // unix timestamp
+}
+
+// Request for adding a new chaintip and height information.
+message NewChaintipAndHeightRequest {
+  bytes chaintip = 1; // the chaintip hash
+  uint32 height = 2; // the height of the chaintip in the blockchain
+}
+
+// Request for adding a new transaction to the mining candidate block.
+message AddTxRequest {
+  bytes txid = 1; // the transaction id
+  uint64 fee = 3; // the transaction fee in satoshis
+  uint64 size = 4; // the size of the transaction in bytes
+  uint32 locktime = 2; // the earliest time a transaction can be mined into a block
+  repeated bytes utxos = 5; // the UTXOs consumed by this transaction
+  bytes txInpoints = 6; // a serialized list of input outpoints for this transaction
+}
+
+// Request for adding a batch of transactions to the mining candidate block.
+message AddTxBatchRequest {
+  repeated AddTxRequest txRequests = 1; // a batch of transaction requests
+}
+
+// Request for adding a batch of transactions using columnar format.
+// This format stores transaction data in column-oriented arrays for better performance.
+//
+// Column-oriented storage benefits:
+// - Single allocation per array instead of N allocations per transaction
+// - Better cache locality from sequential memory access
+// - Fewer pointer dereferences during processing
+// - Reduced GC pressure from fewer heap objects
+//
+// OPTIMIZATION: TxInpoints are pre-deserialized by the Client (which runs on multiple machines)
+// and sent in columnar format. This shifts deserialization work away from the single-machine Server.
+// The Server reconstructs TxInpoints directly from columnar data WITHOUT deserialization overhead.
+message AddTxBatchColumnarRequest {
+  // All transaction IDs concatenated (each exactly 32 bytes).
+  // Total length must be divisible by 32.
+  // Transaction count = len(txids_packed) / 32
+  bytes txids_packed = 1;
+
+  // Transaction fees in satoshis (one per transaction).
+  // Length must equal transaction count.
+  repeated uint64 fees = 2;
+
+  // Transaction sizes in bytes (one per transaction).
+  // Length must equal transaction count.
+  repeated uint64 sizes = 3;
+
+  // All parent transaction hashes concatenated (each exactly 32 bytes).
+  // Deserialized from TxInpoints on the Client side.
+  // Use parent_tx_offsets to identify boundaries for each transaction.
+  bytes parent_tx_hashes_packed = 6;
+
+  // Offsets into parent_tx_hashes_packed for each transaction.
+  // Length must be exactly transaction_count + 1.
+  // Each offset is in units of hashes (multiply by 32 for byte offset).
+  // Example: [0, 3, 7, 10] represents 3 transactions:
+  //   - Transaction 0: 3 parent hashes (hashes 0-2)
+  //   - Transaction 1: 4 parent hashes (hashes 3-6)
+  //   - Transaction 2: 3 parent hashes (hashes 7-9)
+  repeated uint32 parent_tx_offsets = 7;
+
+  // All parent vout indices for all transactions, flattened and concatenated.
+  // These are the Idxs from TxInpoints (the uint32 indices for each parent hash).
+  // Use vout_idx_offsets to identify boundaries.
+  repeated uint32 parent_vout_indices = 8;
+
+  // Offsets into parent_vout_indices for each parent hash.
+  // Length must be exactly (total number of parent hashes) + 1.
+  // This creates a 2-level offset structure:
+  //   1. parent_tx_offsets identifies which parent hashes belong to each transaction
+  //   2. vout_idx_offsets identifies which vout indices belong to each parent hash
+  repeated uint32 vout_idx_offsets = 9;
+}
+
+// Request for retrieving a mining candidate block template.
+message GetMiningCandidateRequest {
+  bool includeSubtrees = 1; // whether to include the subtrees in the mining candidate
+}
+
+// Request for removing a transaction from the mining candidate block.
+message RemoveTxRequest {
+  bytes txid = 1; // the transaction id to remove
+}
+
+// Response indicating whether the addition of a transaction was successful.
+message AddTxResponse {
+  bool ok = 1; // true if the transaction was successfully added
+}
+
+// Response indicating whether the addition of a batch of transactions was successful.
+message AddTxBatchResponse {
+  bool ok = 1; // true if the transactions were successfully added
+}
+
+// Request for submitting a mining solution to the blockchain.
+message SubmitMiningSolutionRequest {
+  bytes id = 1; // the id of the mining candidate
+  uint32 nonce = 2; // the nonce value used for mining
+  bytes coinbase_tx = 3; // the coinbase transaction bytes
+  optional uint32 time = 4; // the timestamp of the block
+  optional uint32 version = 5; // the version of the block
+}
+
+// Response indicating whether the call was successful.
+message OKResponse {
+  bool ok = 1; // true if the call was successful
+}
+
+// Message containing the state of the block assembly service.
+message StateMessage {
+  string blockAssemblyState = 1; // the state of the block assembly service
+  string subtreeProcessorState = 2; // the state of the block assembly subtree processor
+  uint32 subtreeCount = 3; // the number of subtrees
+  uint32 subtreeSize = 4; // the size of each subtree
+  uint64 txCount = 5; // the number of transactions
+  int64 queueCount = 6; // the size of the queue
+  uint32 currentHeight = 7; // the height of the chaintip
+  string currentHash = 8; // the hash of the chaintip
+  uint32 removeMapCount = 9; // the number of transactions in the remove map
+  repeated string subtrees = 10; // the hashes of the current subtrees
+}
+
+// Response containing the current difficulty of the blockchain.
+message GetCurrentDifficultyResponse {
+  double difficulty = 1; // the current difficulty of the blockchain
+}
+
+// Request for generating a block.
+message GenerateBlocksRequest {
+  int32 count = 1; // the number of blocks to generate
+  optional string address = 2; // the address to send the generated blocks to
+  optional int32 maxTries = 3; // the maximum number of attempts to generate a block
+}
+
+// Response for the GetBlockAssemblyBlockCandidate method.
+message GetBlockAssemblyBlockCandidateResponse {
+  bytes block = 1; // the block candidate in block assembly
+}
+
+// Response for the GetBlockAssemblyTxs method.
+message GetBlockAssemblyTxsResponse {
+  uint64 txCount = 1; // the number of transactions in the block assembly
+  repeated string txs = 2; // the transactions currently being assembled in the block assembly
+}

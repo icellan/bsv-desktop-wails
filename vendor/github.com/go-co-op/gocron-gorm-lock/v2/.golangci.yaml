@@ -1,0 +1,67 @@
+version: "2"
+run:
+  issues-exit-code: 1
+  tests: true
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+  path-prefix: ""
+linters:
+  enable:
+    - bodyclose
+    - copyloopvar
+    - embeddedstructfieldcheck
+    - gosec
+    - funcorder
+    - misspell
+    - revive
+    - whitespace
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+          - errcheck
+          - gosec
+        path: _test\.go
+    paths:
+      - local
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-same-issues: 100
+  fix: true
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - gci
+  settings:
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'
+    gofumpt:
+      extra-rules: true
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+  exclusions:
+    generated: lax
+    paths:
+      - local
+      - third_party$
+      - builtin$
+      - examples$
