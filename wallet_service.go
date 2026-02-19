@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -345,6 +346,7 @@ func (ws *WalletService) CallWalletMethod(method string, argsJSON string, origin
 		result, err = w.VerifySignature(ctx, args, origin)
 
 	case "acquireCertificate":
+		argsJSON = normalizeCertFields(argsJSON, []string{"type", "serialNumber"}, "", nil)
 		var args SDKAcquireCertificateArgs
 		if e := json.Unmarshal([]byte(argsJSON), &args); e != nil {
 			return "", fmt.Errorf("invalid args: %w", e)
@@ -352,6 +354,7 @@ func (ws *WalletService) CallWalletMethod(method string, argsJSON string, origin
 		result, err = w.AcquireCertificate(ctx, args, origin)
 
 	case "listCertificates":
+		argsJSON = normalizeCertFields(argsJSON, []string{"types"}, "", nil)
 		var args SDKListCertificatesArgs
 		if e := json.Unmarshal([]byte(argsJSON), &args); e != nil {
 			return "", fmt.Errorf("invalid args: %w", e)
@@ -359,6 +362,7 @@ func (ws *WalletService) CallWalletMethod(method string, argsJSON string, origin
 		result, err = w.ListCertificates(ctx, args, origin)
 
 	case "proveCertificate":
+		argsJSON = normalizeCertFields(argsJSON, nil, "certificate", []string{"type", "serialNumber"})
 		var args SDKProveCertificateArgs
 		if e := json.Unmarshal([]byte(argsJSON), &args); e != nil {
 			return "", fmt.Errorf("invalid args: %w", e)
@@ -366,6 +370,7 @@ func (ws *WalletService) CallWalletMethod(method string, argsJSON string, origin
 		result, err = w.ProveCertificate(ctx, args, origin)
 
 	case "relinquishCertificate":
+		argsJSON = normalizeCertFields(argsJSON, []string{"type", "serialNumber"}, "", nil)
 		var args SDKRelinquishCertificateArgs
 		if e := json.Unmarshal([]byte(argsJSON), &args); e != nil {
 			return "", fmt.Errorf("invalid args: %w", e)
@@ -422,4 +427,99 @@ func (ws *WalletService) CallWalletMethod(method string, argsJSON string, origin
 	}
 
 	return string(resultJSON), nil
+}
+
+// padBase64To32 decodes a base64 string and re-encodes it padded to exactly 32 bytes.
+// The TS SDK allows short base64 CertificateType/SerialNumber values that are implicitly
+// zero-padded, but the Go SDK's JSON unmarshaler requires exactly 32 bytes.
+func padBase64To32(s string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return s, err
+	}
+	if len(decoded) == 32 {
+		return s, nil
+	}
+	if len(decoded) > 32 {
+		return s, fmt.Errorf("expected <= 32 bytes, got %d", len(decoded))
+	}
+	padded := make([]byte, 32)
+	copy(padded, decoded)
+	return base64.StdEncoding.EncodeToString(padded), nil
+}
+
+// normalizeCertFields pre-processes JSON args to pad base64 CertificateType and
+// SerialNumber fields to exactly 32 bytes, bridging TS SDK and Go SDK formats.
+func normalizeCertFields(argsJSON string, topFields []string, nestedObj string, nestedFields []string) string {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err != nil {
+		return argsJSON
+	}
+
+	changed := false
+
+	for _, field := range topFields {
+		val, ok := raw[field]
+		if !ok {
+			continue
+		}
+		// Try as single base64 string
+		var s string
+		if err := json.Unmarshal(val, &s); err == nil && s != "" {
+			if padded, err := padBase64To32(s); err == nil && padded != s {
+				raw[field], _ = json.Marshal(padded)
+				changed = true
+			}
+			continue
+		}
+		// Try as array of base64 strings
+		var arr []string
+		if err := json.Unmarshal(val, &arr); err == nil && len(arr) > 0 {
+			anyPadded := false
+			for i, v := range arr {
+				if padded, err := padBase64To32(v); err == nil && padded != v {
+					arr[i] = padded
+					anyPadded = true
+				}
+			}
+			if anyPadded {
+				raw[field], _ = json.Marshal(arr)
+				changed = true
+			}
+		}
+	}
+
+	// Handle nested object fields (e.g., certificate.type, certificate.serialNumber)
+	if nestedObj != "" && len(nestedFields) > 0 {
+		if nested, ok := raw[nestedObj]; ok {
+			var nestedMap map[string]json.RawMessage
+			if err := json.Unmarshal(nested, &nestedMap); err == nil {
+				nestedChanged := false
+				for _, field := range nestedFields {
+					if val, ok := nestedMap[field]; ok {
+						var s string
+						if err := json.Unmarshal(val, &s); err == nil && s != "" {
+							if padded, err := padBase64To32(s); err == nil && padded != s {
+								nestedMap[field], _ = json.Marshal(padded)
+								nestedChanged = true
+							}
+						}
+					}
+				}
+				if nestedChanged {
+					raw[nestedObj], _ = json.Marshal(nestedMap)
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return argsJSON
+	}
+	result, err := json.Marshal(raw)
+	if err != nil {
+		return argsJSON
+	}
+	return string(result)
 }
