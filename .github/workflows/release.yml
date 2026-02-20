@@ -30,6 +30,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Import Apple Developer Certificate
+        if: env.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
@@ -44,7 +45,10 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
       - name: Verify certificate
+        if: env.APPLE_CERTIFICATE != ''
         id: verify_cert
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID")
           echo "CERT_INFO=$CERT_INFO"
@@ -58,6 +62,7 @@ jobs:
         run: make build-mac
 
       - name: Code sign .app bundle
+        if: steps.verify_cert.outputs.cert_id != ''
         env:
           SIGNING_IDENTITY: ${{ steps.verify_cert.outputs.cert_id }}
         run: |
@@ -67,6 +72,7 @@ jobs:
           codesign --verify --verbose "build/bin/BSV-Desktop.app"
 
       - name: Notarize .app bundle
+        if: steps.verify_cert.outputs.cert_id != '' && secrets.APPLE_ID != ''
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
@@ -86,6 +92,7 @@ jobs:
         run: make package-mac
 
       - name: Code sign DMG
+        if: steps.verify_cert.outputs.cert_id != ''
         env:
           SIGNING_IDENTITY: ${{ steps.verify_cert.outputs.cert_id }}
         run: |
@@ -129,12 +136,16 @@ jobs:
         run: make build-linux
 
       - name: Import GPG key
+        if: env.GPG_PRIVATE_KEY != ''
         env:
           GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --import
 
       - name: Sign binary with GPG
+        if: env.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
         run: |
           gpg --detach-sign --armor "build/bin/BSV-Desktop"
 
@@ -142,7 +153,13 @@ jobs:
         run: |
           cd build/bin
           sha256sum BSV-Desktop > SHA256SUMS
-          gpg --detach-sign --armor SHA256SUMS
+
+      - name: Sign SHA256SUMS with GPG
+        if: env.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
+        run: |
+          gpg --detach-sign --armor build/bin/SHA256SUMS
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -182,16 +199,22 @@ jobs:
         run: |
           VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
           CLEAN_VERSION=$(echo $VERSION | sed 's/^v//')
-          CGO_ENABLED=1 go build -tags desktop,production \
+          CGO_ENABLED=1 go build -mod=vendor -tags desktop,production \
             -ldflags "-X main.version=$CLEAN_VERSION -H windowsgui" \
             -o build/bin/BSV-Desktop.exe .
 
       - name: Set up DigiCert certificate
+        if: env.DIGICERT_CERT != ''
+        env:
+          DIGICERT_CERT: ${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}
         run: |
           echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
         shell: bash
 
       - name: Set DigiCert environment variables
+        if: env.DIGICERT_CERT != ''
+        env:
+          DIGICERT_CERT: ${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}
         shell: bash
         run: |
           echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
@@ -201,27 +224,32 @@ jobs:
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
 
       - name: Code signing with Software Trust Manager
+        if: env.SM_API_KEY != ''
         uses: digicert/ssm-code-signing@v1.1.0
         env:
           FORCE_DOWNLOAD_TOOLS: 'true'
 
       - name: DigiCert tools healthcheck
+        if: env.SM_API_KEY != ''
         shell: cmd
         run: |
           smctl version
           smctl healthcheck
 
       - name: Sync KeyLocker certificate
+        if: env.SM_API_KEY != ''
         shell: cmd
         run: |
           "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
 
       - name: Sign Windows executable
+        if: env.SM_FINGERPRINT != ''
         shell: cmd
         run: |
           smctl sign --fingerprint %SM_FINGERPRINT% --input "build\bin\BSV-Desktop.exe"
 
       - name: Verify Windows signature
+        if: env.SM_FINGERPRINT != ''
         shell: pwsh
         run: |
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
