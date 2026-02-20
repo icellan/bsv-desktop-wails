@@ -14,6 +14,9 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_DEVELOPER_ID_CERT != '' }}
+      HAS_APPLE_NOTARIZE: ${{ secrets.APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,7 +33,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Import Apple Developer Certificate
-        if: env.APPLE_CERTIFICATE != ''
+        if: env.HAS_APPLE_CERT == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
@@ -45,10 +48,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
       - name: Verify certificate
-        if: env.APPLE_CERTIFICATE != ''
+        if: env.HAS_APPLE_CERT == 'true'
         id: verify_cert
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID")
           echo "CERT_INFO=$CERT_INFO"
@@ -72,13 +73,12 @@ jobs:
           codesign --verify --verbose "build/bin/BSV-Desktop.app"
 
       - name: Notarize .app bundle
-        if: steps.verify_cert.outputs.cert_id != '' && secrets.APPLE_ID != ''
+        if: steps.verify_cert.outputs.cert_id != '' && env.HAS_APPLE_NOTARIZE == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Create a zip for notarization
           ditto -c -k --keepParent "build/bin/BSV-Desktop.app" "build/bin/BSV-Desktop-notarize.zip"
           xcrun notarytool submit "build/bin/BSV-Desktop-notarize.zip" \
             --apple-id "$APPLE_ID" \
@@ -109,6 +109,8 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    env:
+      HAS_GPG_KEY: ${{ secrets.APP_IMAGE_GPG_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,16 +138,14 @@ jobs:
         run: make build-linux
 
       - name: Import GPG key
-        if: env.GPG_PRIVATE_KEY != ''
+        if: env.HAS_GPG_KEY == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --import
 
       - name: Sign binary with GPG
-        if: env.GPG_PRIVATE_KEY != ''
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
+        if: env.HAS_GPG_KEY == 'true'
         run: |
           gpg --detach-sign --armor "build/bin/BSV-Desktop"
 
@@ -155,9 +155,7 @@ jobs:
           sha256sum BSV-Desktop > SHA256SUMS
 
       - name: Sign SHA256SUMS with GPG
-        if: env.GPG_PRIVATE_KEY != ''
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
+        if: env.HAS_GPG_KEY == 'true'
         run: |
           gpg --detach-sign --armor build/bin/SHA256SUMS
 
@@ -175,6 +173,8 @@ jobs:
     runs-on: windows-2022
     permissions:
       contents: write
+    env:
+      HAS_DIGICERT: ${{ secrets.DIGICERT_CLIENT_AUTH_CERT != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -204,17 +204,13 @@ jobs:
             -o build/bin/BSV-Desktop.exe .
 
       - name: Set up DigiCert certificate
-        if: env.DIGICERT_CERT != ''
-        env:
-          DIGICERT_CERT: ${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}
+        if: env.HAS_DIGICERT == 'true'
         run: |
           echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
         shell: bash
 
       - name: Set DigiCert environment variables
-        if: env.DIGICERT_CERT != ''
-        env:
-          DIGICERT_CERT: ${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}
+        if: env.HAS_DIGICERT == 'true'
         shell: bash
         run: |
           echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
@@ -224,32 +220,32 @@ jobs:
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
 
       - name: Code signing with Software Trust Manager
-        if: env.SM_API_KEY != ''
+        if: env.HAS_DIGICERT == 'true'
         uses: digicert/ssm-code-signing@v1.1.0
         env:
           FORCE_DOWNLOAD_TOOLS: 'true'
 
       - name: DigiCert tools healthcheck
-        if: env.SM_API_KEY != ''
+        if: env.HAS_DIGICERT == 'true'
         shell: cmd
         run: |
           smctl version
           smctl healthcheck
 
       - name: Sync KeyLocker certificate
-        if: env.SM_API_KEY != ''
+        if: env.HAS_DIGICERT == 'true'
         shell: cmd
         run: |
           "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
 
       - name: Sign Windows executable
-        if: env.SM_FINGERPRINT != ''
+        if: env.HAS_DIGICERT == 'true'
         shell: cmd
         run: |
           smctl sign --fingerprint %SM_FINGERPRINT% --input "build\bin\BSV-Desktop.exe"
 
       - name: Verify Windows signature
-        if: env.SM_FINGERPRINT != ''
+        if: env.HAS_DIGICERT == 'true'
         shell: pwsh
         run: |
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
