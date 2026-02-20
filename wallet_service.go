@@ -33,7 +33,7 @@ type WalletService struct {
 // NewWalletService creates a new WalletService
 func NewWalletService() *WalletService {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelDebug,
 	}))
 	return &WalletService{
 		logger: logger,
@@ -95,7 +95,7 @@ func (ws *WalletService) InitializeWallet(privateKeyHex string, chain string) er
 
 	providerOpts := []storage.ProviderOption{
 		storage.WithDBConfig(dbConfig),
-		storage.WithFeeModel(defs.DefaultFeeModel()),
+		storage.WithFeeModel(defs.FeeModel{Type: defs.SatPerKB, Value: 100}),
 		storage.WithCommission(defs.DefaultCommission()),
 		storage.WithLogger(ws.logger),
 		storage.WithBackgroundBroadcasterContext(ctx),

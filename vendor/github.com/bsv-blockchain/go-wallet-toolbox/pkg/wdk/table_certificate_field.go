@@ -1,7 +1,6 @@
 package wdk
 
 import (
-	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -38,7 +37,7 @@ func ParseToTableCertificateFieldSlice(userID int, fields map[string]string, key
 			UserID:     userID,
 			FieldName:  name,
 			FieldValue: value,
-			MasterKey:  primitives.Base64String(base64.StdEncoding.EncodeToString([]byte(masterKey))),
+			MasterKey:  primitives.Base64String(masterKey),
 		})
 	}
 

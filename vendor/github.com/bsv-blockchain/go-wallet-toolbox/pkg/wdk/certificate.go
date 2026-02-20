@@ -214,8 +214,8 @@ func parseSerialNumber(s string) (sdk.SerialNumber, error) {
 	}
 
 	var serial sdk.SerialNumber
-	if len(serialBytes) != len(serial) {
-		return sdk.SerialNumber{}, fmt.Errorf("serial bytes length: %d is not equal to sdk.SerialNumber bytes length: %d", len(serialBytes), len(serial))
+	if len(serialBytes) > len(serial) {
+		return sdk.SerialNumber{}, fmt.Errorf("serial bytes length: %d exceeds sdk.SerialNumber max length: %d", len(serialBytes), len(serial))
 	}
 
 	copy(serial[:], serialBytes)
@@ -232,8 +232,8 @@ func parseCertificationType(s string) (sdk.CertificateType, error) {
 	}
 
 	var certType sdk.CertificateType
-	if len(certType) != len(certBytes) {
-		return sdk.CertificateType{}, fmt.Errorf("certificate type bytes length: %d is not equal to sdk.CertificateType bytes length: %d", len(certBytes), len(certType))
+	if len(certBytes) > len(certType) {
+		return sdk.CertificateType{}, fmt.Errorf("certificate type bytes length: %d exceeds sdk.CertificateType max length: %d", len(certBytes), len(certType))
 	}
 
 	copy(certType[:], certBytes)

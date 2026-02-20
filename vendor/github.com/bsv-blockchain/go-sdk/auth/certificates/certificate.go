@@ -7,9 +7,11 @@ package certificates
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -106,24 +108,67 @@ func NewCertificate(
 	}
 }
 
-// ToBinary serializes the certificate into binary format
+// ToBinary serializes the certificate into binary format.
+// This matches the TypeScript SDK's Certificate.toBinary() which writes
+// base64-decoded bytes directly for Type and SerialNumber (variable length),
+// NOT the fixed 32-byte format used by wallet.Certificate serializer.
 func (c *Certificate) ToBinary(includeSignature bool) ([]byte, error) {
-	walletCert, err := c.ToWalletCertificate()
+	w := util.NewWriter()
+
+	// Type - write decoded base64 bytes directly (matching TS SDK)
+	typeBytes, err := base64.StdEncoding.DecodeString(string(c.Type))
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert certificate to wallet format: %w", err)
+		return nil, fmt.Errorf("failed to decode certificate type: %w", err)
+	}
+	w.WriteBytes(typeBytes)
+
+	// SerialNumber - write decoded base64 bytes directly
+	serialBytes, err := base64.StdEncoding.DecodeString(string(c.SerialNumber))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode serial number: %w", err)
+	}
+	w.WriteBytes(serialBytes)
+
+	// Subject public key (compressed, 33 bytes)
+	w.WriteBytes(c.Subject.Compressed())
+
+	// Certifier public key (compressed, 33 bytes)
+	w.WriteBytes(c.Certifier.Compressed())
+
+	// Revocation outpoint (txid reversed + varint index)
+	if c.RevocationOutpoint != nil {
+		w.WriteBytesReverse(c.RevocationOutpoint.Txid[:])
+		w.WriteVarInt(uint64(c.RevocationOutpoint.Index))
 	}
 
-	var data []byte
-	if includeSignature {
-		data, err = serializer.SerializeCertificate(walletCert)
-	} else {
-		data, err = serializer.SerializeCertificateNoSignature(walletCert)
+	// Fields (sorted lexicographically, matching TS SDK)
+	fieldNames := make([]string, 0, len(c.Fields))
+	for fieldName := range c.Fields {
+		fieldNames = append(fieldNames, string(fieldName))
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize certificate: %w", err)
+	sort.Strings(fieldNames)
+
+	w.WriteVarInt(uint64(len(fieldNames)))
+	for _, fieldName := range fieldNames {
+		fieldValue := c.Fields[wallet.CertificateFieldNameUnder50Bytes(fieldName)]
+		fieldNameBytes := []byte(fieldName)
+		w.WriteVarInt(uint64(len(fieldNameBytes)))
+		w.WriteBytes(fieldNameBytes)
+		fieldValueBytes := []byte(fieldValue)
+		w.WriteVarInt(uint64(len(fieldValueBytes)))
+		w.WriteBytes(fieldValueBytes)
 	}
 
-	return data, nil
+	// Signature if included
+	if includeSignature && len(c.Signature) > 0 {
+		sig, err := ec.ParseSignature(c.Signature)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse signature: %w", err)
+		}
+		w.WriteBytes(sig.Serialize())
+	}
+
+	return w.Buf, nil
 }
 
 // CertificateFromBinary deserializes a certificate from binary format

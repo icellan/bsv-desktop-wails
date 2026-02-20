@@ -45,7 +45,7 @@ func certModelToResult(model *entity.Certificate) (*wdk.CertificateResult, error
 func certificateModelFieldsToKeyringResult(fields []entity.CertificateField) (wdk.KeyringMap, error) {
 	result := make(wdk.KeyringMap)
 	for _, field := range fields {
-		val := field.FieldValue
+		val := field.MasterKey
 		_, err := base64.StdEncoding.DecodeString(val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode string %s, expected valid Base64 string: %w", val, err)

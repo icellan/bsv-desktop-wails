@@ -17,8 +17,8 @@ func MapVerifiableCertificateToCertificate(cert certificates.VerifiableCertifica
 	}
 
 	var serial wallet.SerialNumber
-	if len(serialBytes) != len(serial) {
-		return wallet.Certificate{}, fmt.Errorf("serial bytes length: %d is not equal to wallet.SerialNumber bytes length: %d", len(serialBytes), len(serial))
+	if len(serialBytes) > len(serial) {
+		return wallet.Certificate{}, fmt.Errorf("serial bytes length: %d exceeds wallet.SerialNumber max length: %d", len(serialBytes), len(serial))
 	}
 
 	copy(serial[:], serialBytes)
@@ -29,8 +29,8 @@ func MapVerifiableCertificateToCertificate(cert certificates.VerifiableCertifica
 	}
 
 	var certType wallet.CertificateType
-	if len(certType) != len(certTypeBytes) {
-		return wallet.Certificate{}, fmt.Errorf("certificate type bytes length: %d is not equal to wallet.CertificateType bytes length: %d", len(certTypeBytes), len(certType))
+	if len(certTypeBytes) > len(certType) {
+		return wallet.Certificate{}, fmt.Errorf("certificate type bytes length: %d exceeds wallet.CertificateType max length: %d", len(certTypeBytes), len(certType))
 	}
 
 	copy(certType[:], certTypeBytes)
